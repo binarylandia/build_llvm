@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+trap "exit" INT
+
+if [ -z "$1" ]; then
+  echo "Usage: $0 <path_to_executable>" >&2
+  exit 1
+fi
+
+has_error=0
+
+output=$(ldd "$1" 2>&1 || true)
+if ! echo "$output" | grep -qE 'statically linked|not a dynamic executable'; then
+  echo "'$1' is not a static executable" >&2
+  has_error=1
+fi
+
+glibc_version=$(objdump -p "$1" | grep 'GLIBC_' | awk '{print $NF}' | sed 's/GLIBC_//' | sort -V | tail -n 1)
+if [ -n "$glibc_version" ]; then
+  echo "'$1' depends on glibc '$glibc_version'" >&2
+  has_error=1
+fi
+
+output=$(ldd "$1" | awk '/=>/ {print $(NF-1)}' | while read -r lib_path; do
+  version="$(strings "$lib_path" | grep -Eo '([0-9]+\.[0-9]+\.[0-9]+)' | sort -u | head -n 1)"
+  if [ -n "$version" ]; then
+    lib_name="$(basename "$lib_path")"
+    if [[ "$lib_name" != "libc.so"* ]]; then
+      echo "$lib_name $version"
+    fi
+  fi
+done | sort)
+
+if [ -n "$output" ]; then
+  echo "'$1' depends on:"
+  echo "$output" | while read -r line; do
+    echo "  * $line"
+  done
+fi
+
+if [ "$has_error" != "0" ]; then
+  echo "$0: Error: '$1': some of the checks failed (see above)" >&2
+fi

@@ -9,25 +9,21 @@ SHELL ["bash", "-euxo", "pipefail", "-c"]
 
 RUN set -euxo pipefail >/dev/null \
 && if [[ "$DOCKER_BASE_IMAGE" != centos* ]] && [[ "$DOCKER_BASE_IMAGE" != *manylinux2014* ]]; then exit 0; fi \
-&& echo -e "[buildlogs-c7.2009.u]\nname=https://buildlogs.centos.org/c7.2009.u.x86_64/\nbaseurl=https://buildlogs.centos.org/c7.2009.u.x86_64/\nenabled=1\ngpgcheck=0\n\n[buildlogs-c7.2009.00]\nname=https://buildlogs.centos.org/c7.2009.00.x86_64/\nbaseurl=https://buildlogs.centos.org/c7.2009.00.x86_64/\nenabled=1\ngpgcheck=0" > /etc/yum.repos.d/buildlogs.repo \
-&& echo -e "[llvm-toolset]\nname=https://buildlogs.centos.org/c7-llvm-toolset-13.0.x86_64/\nbaseurl=https://buildlogs.centos.org/c7-llvm-toolset-13.0.x86_64/\nenabled=1\ngpgcheck=0" > /etc/yum.repos.d/llvm-toolset.repo \
 && sed -i "s/enabled=1/enabled=0/g" "/etc/yum/pluginconf.d/fastestmirror.conf" \
 && sed -i "s/enabled=1/enabled=0/g" "/etc/yum/pluginconf.d/ovl.conf" \
 && yum clean all \
-&& yum -y install dnf epel-release \
-&& dnf install -y \
+&& yum install -y epel-release \
+&& yum install -y \
   bash \
   ca-certificates \
   curl \
   git \
-  libedit-devel \
   make \
-  ncurses-devel \
   sudo \
   tar \
   xz \
-  zlib-devel \
-&& dnf clean all \
+>/dev/null \
+&& yum clean all >/dev/null \
 && rm -rf /var/cache/yum
 
 
@@ -38,6 +34,7 @@ RUN set -euxo pipefail >/dev/null \
 && apt-get install -qq --no-install-recommends --yes \
   bash \
   ca-certificates \
+  clang \
   curl \
   git \
   gnupg \
@@ -54,16 +51,82 @@ RUN set -euxo pipefail >/dev/null \
 && apt-get autoremove --yes >/dev/null
 
 
+ENV MY_PYTHON_ROOT="/opt/python/cp38-cp38"
+ENV PATH="${MY_PYTHON_ROOT}/bin:${PATH}"
+ENV C_INCLUDE_PATH="${MY_PYTHON_ROOT}/include:${C_INCLUDE_PATH}"
+ENV CPLUS_INCLUDE_PATH="${MY_PYTHON_ROOT}/include:${CPLUS_INCLUDE_PATH}"
+ENV LD_LIBRARY_PATH="${MY_PYTHON_ROOT}/lib:${LD_LIBRARY_PATH}"
+ENV PKG_CONFIG_PATH="${MY_PYTHON_ROOT}/lib/pkgconfig:${PKG_CONFIG_PATH}"
 RUN set -euxo pipefail >/dev/null \
-&& curl -fsSL "https://github.com/binarylandia/build_gcc-musl-cross/releases/download/gcc-9.4.0-musl-1.2.5-20241028071857/gcc-9.4.0-musl-1.2.5-x86_64-unknown-linux-musl-20241028071857.tar.xz" | tar -C "/usr" -xJ \
+&& pip3 install --upgrade \
+  pip \
+  pyyaml \
+  swig \
+&& pip cache purge >/dev/null \
+&& rm -rf "/opt/_internal/pipx"
+
+
+#ENV MY_SYSROOT_DIR="/usr/x86_64-unknown-linux-gnu"
+#ENV CC="/usr/bin/x86_64-unknown-linux-gnu-gcc"
+#ENV CXX="/usr/bin/x86_64-unknown-linux-gnu-g++"
+#ENV FC="/usr/bin/x86_64-unknown-linux-gnu-gfortran"
+#ENV AR="/usr/bin/x86_64-unknown-linux-gnu-ar"
+#ENV AS="/usr/bin/x86_64-unknown-linux-gnu-as"
+#ENV LD="/usr/bin/x86_64-unknown-linux-gnu-ld"
+#ENV NM="/usr/bin/x86_64-unknown-linux-gnu-nm"
+#ENV OBJCOPY="/usr/bin/x86_64-unknown-linux-gnu-objcopy"
+#ENV OBJDUMP="/usr/bin/x86_64-unknown-linux-gnu-objdump"
+#ENV RANLIB="/usr/bin/x86_64-unknown-linux-gnu-ranlib"
+#ENV STRIP="/usr/bin/x86_64-unknown-linux-gnu-strip"
+#ENV PATH="$MY_SYSROOT_DIR/bin:${PATH}"
+#ENV C_INCLUDE_PATH="${MY_SYSROOT_DIR}/include:${C_INCLUDE_PATH}"
+#ENV CPLUS_INCLUDE_PATH="${MY_SYSROOT_DIR}/include:${CPLUS_INCLUDE_PATH}"
+#ENV LIBRARY_PATH="${MY_SYSROOT_DIR}/lib64:${LIBRARY_PATH}"
+#ENV PKG_CONFIG_PATH="${MY_SYSROOT_DIR}/lib64/pkgconfig:${MY_SYSROOT_DIR}/share/pkgconfig"
+#RUN set -euxo pipefail >/dev/null \
+#&& curl -fsSL "https://github.com/binarylandia/build_crosstool-ng/releases/download/2024-10-30_06-02-56/gcc-14.2.0-x86_64-unknown-linux-gnu-2024-10-30_06-02-56.tar.xz" | tar -C "/usr" -xJ \
+#&& which x86_64-unknown-linux-gnu-gcc \
+#&& /usr/bin/x86_64-unknown-linux-gnu-gcc -v
+
+ENV MY_SYSROOT_DIR="/usr/x86_64-unknown-linux-musl"
+ENV CC="/usr/bin/x86_64-unknown-linux-musl-gcc"
+ENV CXX="/usr/bin/x86_64-unknown-linux-musl-g++"
+ENV FC="/usr/bin/x86_64-unknown-linux-musl-gfortran"
+ENV AR="/usr/bin/x86_64-unknown-linux-musl-ar"
+ENV AS="/usr/bin/x86_64-unknown-linux-musl-as"
+ENV LD="/usr/bin/x86_64-unknown-linux-musl-ld"
+ENV NM="/usr/bin/x86_64-unknown-linux-musl-nm"
+ENV OBJCOPY="/usr/bin/x86_64-unknown-linux-musl-objcopy"
+ENV OBJDUMP="/usr/bin/x86_64-unknown-linux-musl-objdump"
+ENV RANLIB="/usr/bin/x86_64-unknown-linux-musl-ranlib"
+ENV STRIP="/usr/bin/x86_64-unknown-linux-musl-strip"
+ENV PATH="$MY_SYSROOT_DIR/bin:${PATH}"
+ENV C_INCLUDE_PATH="${MY_SYSROOT_DIR}/include:${C_INCLUDE_PATH}"
+ENV CPLUS_INCLUDE_PATH="${MY_SYSROOT_DIR}/include:${CPLUS_INCLUDE_PATH}"
+ENV LIBRARY_PATH="${MY_SYSROOT_DIR}/lib64:${LIBRARY_PATH}"
+ENV PKG_CONFIG_PATH="${MY_SYSROOT_DIR}/lib64/pkgconfig:${MY_SYSROOT_DIR}/share/pkgconfig"
+RUN set -euxo pipefail >/dev/null \
+&& curl -fsSL "https://github.com/binarylandia/build_crosstool-ng/releases/download/2024-10-30_06-02-56/gcc-10.5.0-x86_64-unknown-linux-musl-2024-10-30_06-02-56.tar.xz" | tar -C "/usr" -xJ \
 && which x86_64-unknown-linux-musl-gcc \
 && /usr/bin/x86_64-unknown-linux-musl-gcc -v
 
+ENV CCACHE_DIR="/cache/ccache"
+ENV CCACHE_NOCOMPRESS="1"
+ENV CCACHE_MAXSIZE="50G"
+RUN set -euxo pipefail >/dev/null \
+&& curl -fsSL "https://github.com/ccache/ccache/releases/download/v4.10.2/ccache-4.10.2-linux-x86_64.tar.xz" | tar --strip-components=1 -C "/usr/bin" -xJ "ccache-4.10.2-linux-x86_64/ccache" \
+&& which ccache \
+&& ccache --version
 
 RUN set -euxo pipefail >/dev/null \
-&& curl -fsSL "https://github.com/Kitware/CMake/releases/download/v3.30.5/cmake-3.30.5-linux-x86_64.tar.gz" | tar -C "/usr" -xz --strip-components=1 \
+&& curl -fsSL "https://github.com/Kitware/CMake/releases/download/v3.30.5/cmake-3.30.5-linux-x86_64.tar.gz" | tar --strip-components=1 -C "/usr" -xz \
 && which cmake \
-&& which cmake --version
+&& cmake --version
+
+RUN set -euxo pipefail >/dev/null \
+&& curl -fsSL "https://github.com/binarylandia/build_zlib/releases/download/zlib-1.3.1-static-20241028131008/zlib-1.3.1-static-20241028131008.tar.xz" | tar -C "/usr" -xJ \
+&& ls /usr/include/zlib.h \
+&& ls /usr/lib/libz.a
 
 
 ARG USER=user
@@ -77,19 +140,6 @@ ENV UID=$UID
 ENV GID=$GID
 ENV TERM="xterm-256color"
 ENV HOME="/home/${USER}"
-ENV CONDA_DIR="/conda"
-ENV PATH="${CONDA_DIR}/bin:${PATH}"
-
-RUN set -euxo pipefail >/dev/null \
-&& sudo mkdir -p "${CONDA_DIR}/bin" "${HOME}/.config/conda" \
-&& curl -fsSL "https://micro.mamba.pm/api/micromamba/linux-64/latest" | tar -C "${CONDA_DIR}/bin" --strip-components=1 -xvj "bin/micromamba" \
-&& micromamba install --yes --root-prefix="${CONDA_DIR}" --prefix="${CONDA_DIR}" \
-  "python=3.12" \
-  'mamba' \
-  'swig' \
-  'yaml' \
-&& mamba clean --all -f -y \
-&& ls -al ${CONDA_DIR}/bin
 
 COPY docker/files /
 
@@ -103,7 +153,4 @@ RUN set -euxo pipefail >/dev/null \
 && touch ${HOME}/.hushlogin \
 && chown -R ${UID}:${GID} "${HOME}"
 
-
 USER ${USER}
-
-

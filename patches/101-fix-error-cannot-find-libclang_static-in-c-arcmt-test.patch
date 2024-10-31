@@ -1,0 +1,39 @@
+From 22a5d1688cad65ab0c8ae7145e47f030fc030ade Mon Sep 17 00:00:00 2001
+From: lateautumn233 <lateautumn233@foxmail.com>
+Date: Wed, 24 Apr 2024 23:48:46 +0800
+Subject: [PATCH] [clang][tools] Adjust the dependency libraries of
+ c-arcmt-test and c-index-test to meet LLVM_BUILD_STATIC=ON.
+ https://github.com/llvm/llvm-project/issues/59507
+
+Signed-off-by: lateautumn233 <lateautumn233@foxmail.com>
+---
+ clang/tools/c-arcmt-test/CMakeLists.txt | 2 +-
+ clang/tools/c-index-test/CMakeLists.txt | 2 +-
+ 2 files changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/clang/tools/c-arcmt-test/CMakeLists.txt b/clang/tools/c-arcmt-test/CMakeLists.txt
+index 08ac93c176db12..fed19b2371a154 100644
+--- a/clang/tools/c-arcmt-test/CMakeLists.txt
++++ b/clang/tools/c-arcmt-test/CMakeLists.txt
+@@ -5,7 +5,7 @@ add_clang_executable(c-arcmt-test
+ if (LLVM_BUILD_STATIC)
+   target_link_libraries(c-arcmt-test
+     PRIVATE
+-    libclang_static
++    libclang
+     )
+ else()
+   target_link_libraries(c-arcmt-test
+diff --git a/clang/tools/c-index-test/CMakeLists.txt b/clang/tools/c-index-test/CMakeLists.txt
+index 0ae1b4e55244eb..5cff22022e4f0c 100644
+--- a/clang/tools/c-index-test/CMakeLists.txt
++++ b/clang/tools/c-index-test/CMakeLists.txt
+@@ -17,7 +17,7 @@ endif()
+ if (LLVM_BUILD_STATIC)
+   target_link_libraries(c-index-test
+     PRIVATE
+-    libclang_static
++    libclang
+     clangCodeGen
+     clangIndex
+   )
