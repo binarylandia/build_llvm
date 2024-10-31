@@ -74,10 +74,10 @@ pushd "$build_dir" >/dev/null
 
   pushd "${src_dir}" >/dev/null
 
-#    export CFLAGS="-static-libgcc -static-libstdc++ ${CFLAGS:-}"
-#    export CXXFLAGS="-static-libgcc -static-libstdc++ ${CXXFLAGS:-}"
-#    export LDFLAGS="-static-libgcc -static-libstdc++ ${LDFLAGS:-}"
-#
+    export CFLAGS="-static-libgcc -static-libstdc++ ${CFLAGS:-}"
+    export CXXFLAGS="-static-libgcc -static-libstdc++ ${CXXFLAGS:-}"
+    export LDFLAGS="-static-libgcc -static-libstdc++ ${LDFLAGS:-}"
+
 #    export CFLAGS="-static --static ${CFLAGS:-}"
 #    export CXXFLAGS="-static --static ${CXXFLAGS:-}"
 #    export LDFLAGS="-static --static ${LDFLAGS:-}"
@@ -85,6 +85,10 @@ pushd "$build_dir" >/dev/null
     export CFLAGS="-pie -fPIE ${CFLAGS:-}"
     export CXXFLAGS="-pie -fPIE ${CXXFLAGS:-}"
     export LDFLAGS="-s -pie -fPIE ${LDFLAGS:-}"
+
+    export CFLAGS="--sysroot=/usr/x86_64-unknown-linux-gnu/sysroot ${CFLAGS:-}"
+    export CXXFLAGS="--sysroot=/usr/x86_64-unknown-linux-gnu/sysroot ${CXXFLAGS:-}"
+    export LDFLAGS="--sysroot=/usr/x86_64-unknown-linux-gnu/sysroot ${LDFLAGS:-}"
 
     export CFLAGS="-w -g0 -Os ${CFLAGS:-}"
     export CXXFLAGS="-w -g0 -Os ${CXXFLAGS:-}"
@@ -97,14 +101,14 @@ pushd "$build_dir" >/dev/null
     export CMAKE_CXX_COMPILER_LAUNCHER="ccache"
 
 
+#      -DCMAKE_POSITION_INDEPENDENT_CODE="ON" \
+#      -DCMAKE_SKIP_RPATH="ON" \
     ${NICE} cmake -S llvm -B "build" \
       -Wno-dev -Wno-deprecated \
       -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
       -DCMAKE_BUILD_TYPE="MinSizeRel" \
       -DCMAKE_COLOR_MAKEFILE="OFF" \
       -DCMAKE_VERBOSE_MAKEFILE="OFF" \
-      -DCMAKE_POSITION_INDEPENDENT_CODE="ON" \
-      -DCMAKE_SKIP_RPATH="ON" \
       \
       -DLLVM_ENABLE_PROJECTS="clang;lld" \
       -DLLVM_TARGETS_TO_BUILD="X86;AArch64;ARM" \
@@ -112,10 +116,7 @@ pushd "$build_dir" >/dev/null
       -DLLVM_INSTALL_TOOLCHAIN_ONLY="ON" \
       \
       -DCLANG_BUILD_TOOLS="ON" \
-      -DCLANG_ENABLE_ARCMT="OFF" \
-      -DCLANG_ENABLE_STATIC_ANALYZER="OFF" \
       -DCLANG_PLUGIN_SUPPORT="ON" \
-      -DLIBCXX_ENABLE_ABI_LINKER_SCRIPT="OFF" \
       -DLLVM_BUILD_TOOLS="OFF" \
       \
       -DLLVM_BUILD_TESTS="OFF" \
@@ -127,25 +128,12 @@ pushd "$build_dir" >/dev/null
       -DLLVM_ENABLE_TERMINFO="OFF" \
       -DLLVM_ENABLE_THREADS="ON" \
       -DLLVM_ENABLE_ZLIB="ON" \
-      -DLLVM_ENABLE_ZSTD="ON" \
+      -DLLVM_ENABLE_ZSTD="OFF" \
       -DLLVM_INCLUDE_BENCHMARKS="OFF" \
       -DLLVM_INCLUDE_DOCS="OFF" \
       -DLLVM_INCLUDE_EXAMPLES="OFF" \
       -DLLVM_INCLUDE_TESTS="OFF" \
       -DLLVM_INCLUDE_UTILS="OFF" \
-      \
-      -DLIBCPP_HAS_MUSL_LIBC="ON" \
-      -DLIBCXX_HAS_MUSL_LIBC="ON" \
-      \
-      -DLIBCLANG_BUILD_STATIC="ON" \
-      -DLLVM_BUILD_LLVM_C_DYLIB="OFF" \
-      -DLLVM_BUILD_LLVM_DYLIB="OFF" \
-      -DLLVM_BUILD_LLVM_DYLIB="OFF" \
-      -DLLVM_BUILD_STATIC="ON" \
-      -DLLVM_ENABLE_PIC="OFF" \
-      -DLLVM_LINK_LLVM_DYLIB="OFF" \
-      -DLLVM_STATIC_LINK_CXX_STDLIB="ON" \
-      -DLLVM_USE_STATIC_ZSTD="ON" \
       2>&1 | log "build.log"
 
     ${NICE} cmake --build "build" --parallel="${JOBS}" 2>&1 | log "build.log"
