@@ -6,19 +6,26 @@ ENV DOCKER_BASE_IMAGE="${DOCKER_BASE_IMAGE}"
 
 SHELL ["bash", "-euxo", "pipefail", "-c"]
 
-
 RUN set -euxo pipefail >/dev/null \
 && if [[ "$DOCKER_BASE_IMAGE" != centos* ]] && [[ "$DOCKER_BASE_IMAGE" != *manylinux2014* ]]; then exit 0; fi \
 && sed -i "s/enabled=1/enabled=0/g" "/etc/yum/pluginconf.d/fastestmirror.conf" \
 && sed -i "s/enabled=1/enabled=0/g" "/etc/yum/pluginconf.d/ovl.conf" \
-&& yum clean all \
-&& yum install -y epel-release \
+&& yum clean all >/dev/null \
+&& yum install -y epel-release >/dev/null \
+&& yum remove -y \
+  clang* \
+  devtoolset* \
+  gcc* \
+  llvm-toolset* \
+>/dev/null \
 && yum install -y \
   bash \
   ca-certificates \
   curl \
+  devtoolset-11 \
   git \
   make \
+  parallel \
   sudo \
   tar \
   xz \
@@ -34,81 +41,29 @@ RUN set -euxo pipefail >/dev/null \
 && apt-get install -qq --no-install-recommends --yes \
   bash \
   ca-certificates \
-  clang \
   curl \
   git \
   gnupg \
   libedit-dev \
   libncurses5-dev \
   make \
+  parallel \
   sudo \
   tar \
   xz-utils \
-  zlib1g-dev \
 >/dev/null \
 && rm -rf /var/lib/apt/lists/* \
 && apt-get clean autoclean >/dev/null \
 && apt-get autoremove --yes >/dev/null
 
-
-ENV MY_PYTHON_ROOT="/opt/python/cp38-cp38"
-ENV PATH="${MY_PYTHON_ROOT}/bin:${PATH}"
-ENV C_INCLUDE_PATH="${MY_PYTHON_ROOT}/include:${C_INCLUDE_PATH}"
-ENV CPLUS_INCLUDE_PATH="${MY_PYTHON_ROOT}/include:${CPLUS_INCLUDE_PATH}"
-ENV LD_LIBRARY_PATH="${MY_PYTHON_ROOT}/lib:${LD_LIBRARY_PATH}"
-ENV PKG_CONFIG_PATH="${MY_PYTHON_ROOT}/lib/pkgconfig:${PKG_CONFIG_PATH}"
 RUN set -euxo pipefail >/dev/null \
+&& export PATH="/opt/python/cp38-cp38/bin:${PATH}" \
 && pip3 install --upgrade \
   pip \
   pyyaml \
   swig \
 && pip cache purge >/dev/null \
 && rm -rf "/opt/_internal/pipx"
-
-
-#ENV MY_SYSROOT_DIR="/usr/x86_64-unknown-linux-gnu"
-#ENV CC="/usr/bin/x86_64-unknown-linux-gnu-gcc"
-#ENV CXX="/usr/bin/x86_64-unknown-linux-gnu-g++"
-#ENV FC="/usr/bin/x86_64-unknown-linux-gnu-gfortran"
-#ENV AR="/usr/bin/x86_64-unknown-linux-gnu-ar"
-#ENV AS="/usr/bin/x86_64-unknown-linux-gnu-as"
-#ENV LD="/usr/bin/x86_64-unknown-linux-gnu-ld"
-#ENV NM="/usr/bin/x86_64-unknown-linux-gnu-nm"
-#ENV OBJCOPY="/usr/bin/x86_64-unknown-linux-gnu-objcopy"
-#ENV OBJDUMP="/usr/bin/x86_64-unknown-linux-gnu-objdump"
-#ENV RANLIB="/usr/bin/x86_64-unknown-linux-gnu-ranlib"
-#ENV STRIP="/usr/bin/x86_64-unknown-linux-gnu-strip"
-#ENV PATH="$MY_SYSROOT_DIR/bin:${PATH}"
-#ENV C_INCLUDE_PATH="${MY_SYSROOT_DIR}/include:${C_INCLUDE_PATH}"
-#ENV CPLUS_INCLUDE_PATH="${MY_SYSROOT_DIR}/include:${CPLUS_INCLUDE_PATH}"
-#ENV LIBRARY_PATH="${MY_SYSROOT_DIR}/lib64:${LIBRARY_PATH}"
-#ENV PKG_CONFIG_PATH="${MY_SYSROOT_DIR}/lib64/pkgconfig:${MY_SYSROOT_DIR}/share/pkgconfig"
-#RUN set -euxo pipefail >/dev/null \
-#&& curl -fsSL "https://github.com/binarylandia/build_crosstool-ng/releases/download/2024-10-30_06-02-56/gcc-14.2.0-x86_64-unknown-linux-gnu-2024-10-30_06-02-56.tar.xz" | tar -C "/usr" -xJ \
-#&& which x86_64-unknown-linux-gnu-gcc \
-#&& /usr/bin/x86_64-unknown-linux-gnu-gcc -v
-
-ENV MY_SYSROOT_DIR="/usr/x86_64-unknown-linux-musl"
-ENV CC="/usr/bin/x86_64-unknown-linux-musl-gcc"
-ENV CXX="/usr/bin/x86_64-unknown-linux-musl-g++"
-ENV FC="/usr/bin/x86_64-unknown-linux-musl-gfortran"
-ENV AR="/usr/bin/x86_64-unknown-linux-musl-ar"
-ENV AS="/usr/bin/x86_64-unknown-linux-musl-as"
-ENV LD="/usr/bin/x86_64-unknown-linux-musl-ld"
-ENV NM="/usr/bin/x86_64-unknown-linux-musl-nm"
-ENV OBJCOPY="/usr/bin/x86_64-unknown-linux-musl-objcopy"
-ENV OBJDUMP="/usr/bin/x86_64-unknown-linux-musl-objdump"
-ENV RANLIB="/usr/bin/x86_64-unknown-linux-musl-ranlib"
-ENV STRIP="/usr/bin/x86_64-unknown-linux-musl-strip"
-ENV PATH="$MY_SYSROOT_DIR/bin:${PATH}"
-ENV C_INCLUDE_PATH="${MY_SYSROOT_DIR}/include:${C_INCLUDE_PATH}"
-ENV CPLUS_INCLUDE_PATH="${MY_SYSROOT_DIR}/include:${CPLUS_INCLUDE_PATH}"
-ENV LIBRARY_PATH="${MY_SYSROOT_DIR}/lib64:${LIBRARY_PATH}"
-ENV PKG_CONFIG_PATH="${MY_SYSROOT_DIR}/lib64/pkgconfig:${MY_SYSROOT_DIR}/share/pkgconfig"
-RUN set -euxo pipefail >/dev/null \
-&& curl -fsSL "https://github.com/binarylandia/build_crosstool-ng/releases/download/2024-10-30_06-02-56/gcc-10.5.0-x86_64-unknown-linux-musl-2024-10-30_06-02-56.tar.xz" | tar -C "/usr" -xJ \
-&& which x86_64-unknown-linux-musl-gcc \
-&& /usr/bin/x86_64-unknown-linux-musl-gcc -v
 
 ENV CCACHE_DIR="/cache/ccache"
 ENV CCACHE_NOCOMPRESS="1"
@@ -124,10 +79,14 @@ RUN set -euxo pipefail >/dev/null \
 && cmake --version
 
 RUN set -euxo pipefail >/dev/null \
-&& curl -fsSL "https://github.com/binarylandia/build_zlib/releases/download/zlib-1.3.1-static-20241028131008/zlib-1.3.1-static-20241028131008.tar.xz" | tar -C "/usr" -xJ \
+&& curl -fsSL "https://github.com/binarylandia/build_zlib/releases/download/zlib-1.3.1-static-20241031112952/zlib-1.3.1-static-20241031112952.tar.xz" | tar -C "/usr" -xJ \
 && ls /usr/include/zlib.h \
 && ls /usr/lib/libz.a
 
+RUN set -euxo pipefail >/dev/null \
+&& curl -fsSL "https://github.com/binarylandia/build_libxml2/releases/download/libxml2-2.12.9-static-20241031113236/libxml2-2.12.9-static-20241031113236.tar.xz" | tar -C "/usr" -xJ \
+&& ls /usr/include/libxml/xmlwriter.h \
+&& ls /usr/lib/libxml2.a
 
 ARG USER=user
 ARG GROUP=user
@@ -154,3 +113,5 @@ RUN set -euxo pipefail >/dev/null \
 && chown -R ${UID}:${GID} "${HOME}"
 
 USER ${USER}
+
+ENTRYPOINT ["scl", "enable", "devtoolset-11", "--"]

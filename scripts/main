@@ -37,20 +37,6 @@ function package() {
     | ${NICE} xz -T0 -k > "${output_tarball}"
 }
 
-write_version() {
-  filepath="${1}"
-
-  cat > "$filepath" << EOF
-${LLVM_REPO_URL}
-${BRANCH}
-$(git rev-parse HEAD)
-$(git describe --always --dirty)
-$(git describe --always --dirty --tags)
-$(git describe --always --dirty --tags --all)
-${build_time}
-EOF
-}
-
 export THIS_DIR="$(abspath "$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)")"
 export ROOT_DIR="$(abspath "${THIS_DIR}/..")"
 
@@ -63,7 +49,7 @@ pushd "$build_dir" >/dev/null
   src_dir="llvm-${VERSION}"
 
   if [ ! -d "${src_dir}" ]; then
-    git clone --recursive --depth=100 -b "${BRANCH}" "${LLVM_REPO_URL}" "${src_dir}"
+    git clone --recursive --depth=1 -b "${BRANCH}" "${LLVM_REPO_URL}" "${src_dir}"
 
     pushd "${src_dir}" >/dev/null
       for patch in $(ls "${ROOT_DIR}/patches/"*.patch | sort); do
@@ -73,18 +59,6 @@ pushd "$build_dir" >/dev/null
   fi
 
   pushd "${src_dir}" >/dev/null
-
-#    export CFLAGS="-static-libgcc -static-libstdc++ ${CFLAGS:-}"
-#    export CXXFLAGS="-static-libgcc -static-libstdc++ ${CXXFLAGS:-}"
-#    export LDFLAGS="-static-libgcc -static-libstdc++ ${LDFLAGS:-}"
-#
-#    export CFLAGS="-static --static ${CFLAGS:-}"
-#    export CXXFLAGS="-static --static ${CXXFLAGS:-}"
-#    export LDFLAGS="-static --static ${LDFLAGS:-}"
-
-    export CFLAGS="-pie -fPIE ${CFLAGS:-}"
-    export CXXFLAGS="-pie -fPIE ${CXXFLAGS:-}"
-    export LDFLAGS="-s -pie -fPIE ${LDFLAGS:-}"
 
     export CFLAGS="-w -g0 -Os ${CFLAGS:-}"
     export CXXFLAGS="-w -g0 -Os ${CXXFLAGS:-}"
@@ -103,8 +77,9 @@ pushd "$build_dir" >/dev/null
       -DCMAKE_BUILD_TYPE="MinSizeRel" \
       -DCMAKE_COLOR_MAKEFILE="OFF" \
       -DCMAKE_VERBOSE_MAKEFILE="OFF" \
-      -DCMAKE_POSITION_INDEPENDENT_CODE="ON" \
-      -DCMAKE_SKIP_RPATH="ON" \
+      \
+      -DPython_EXECUTABLE="/opt/python/cp38-cp38/bin/python3" \
+      -DSWIG_EXECUTABLE="/opt/python/cp38-cp38/bin/swig" \
       \
       -DLLVM_ENABLE_PROJECTS="clang;lld" \
       -DLLVM_TARGETS_TO_BUILD="X86;AArch64;ARM" \
@@ -133,19 +108,6 @@ pushd "$build_dir" >/dev/null
       -DLLVM_INCLUDE_EXAMPLES="OFF" \
       -DLLVM_INCLUDE_TESTS="OFF" \
       -DLLVM_INCLUDE_UTILS="OFF" \
-      \
-      -DLIBCPP_HAS_MUSL_LIBC="ON" \
-      -DLIBCXX_HAS_MUSL_LIBC="ON" \
-      \
-      -DLIBCLANG_BUILD_STATIC="ON" \
-      -DLLVM_BUILD_LLVM_C_DYLIB="OFF" \
-      -DLLVM_BUILD_LLVM_DYLIB="OFF" \
-      -DLLVM_BUILD_LLVM_DYLIB="OFF" \
-      -DLLVM_BUILD_STATIC="ON" \
-      -DLLVM_ENABLE_PIC="OFF" \
-      -DLLVM_LINK_LLVM_DYLIB="OFF" \
-      -DLLVM_STATIC_LINK_CXX_STDLIB="ON" \
-      -DLLVM_USE_STATIC_ZSTD="ON" \
       2>&1 | log "build.log"
 
     ${NICE} cmake --build "build" --parallel="${JOBS}" 2>&1 | log "build.log"
@@ -159,7 +121,6 @@ pushd "$build_dir" >/dev/null
 
     "${INSTALL_DIR}"/bin/clang -v || true
 
-    write_version "${INSTALL_DIR}/version.txt"
     cp "build.log" "${INSTALL_DIR}/"
 
     package "${INSTALL_DIR}" "${outdir}/llvm-${VERSION}-${build_time}.tar.xz"
