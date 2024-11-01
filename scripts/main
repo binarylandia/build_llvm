@@ -106,7 +106,7 @@ pushd "$build_dir" >/dev/null
       -DPython_EXECUTABLE="python3.8" \
       -DSWIG_EXECUTABLE="swig" \
       \
-      -DLLVM_ENABLE_PROJECTS="clang;lld" \
+      -DLLVM_ENABLE_PROJECTS="clang;flang;lld" \
       -DLLVM_TARGETS_TO_BUILD="X86;AArch64;ARM" \
       -DLLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN="ON" \
       -DLLVM_INSTALL_TOOLCHAIN_ONLY="ON" \

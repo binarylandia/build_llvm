@@ -22,8 +22,6 @@ RUN set -euxo pipefail >/dev/null \
   bash \
   ca-certificates \
   curl \
-  gcc \
-  gcc-c++ \
   git \
   glibc-static \
   make \
