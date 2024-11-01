@@ -22,8 +22,10 @@ RUN set -euxo pipefail >/dev/null \
   bash \
   ca-certificates \
   curl \
-  devtoolset-11 \
+  gcc \
+  gcc-c++ \
   git \
+  glibc-static \
   make \
   parallel \
   sudo \
@@ -32,7 +34,6 @@ RUN set -euxo pipefail >/dev/null \
 >/dev/null \
 && yum clean all >/dev/null \
 && rm -rf /var/cache/yum
-
 
 RUN set -euxo pipefail >/dev/null \
 && if [[ "$DOCKER_BASE_IMAGE" != debian* ]] && [[ "$DOCKER_BASE_IMAGE" != ubuntu* ]]; then exit 0; fi \
@@ -56,14 +57,6 @@ RUN set -euxo pipefail >/dev/null \
 && apt-get clean autoclean >/dev/null \
 && apt-get autoremove --yes >/dev/null
 
-RUN set -euxo pipefail >/dev/null \
-&& export PATH="/opt/python/cp38-cp38/bin:${PATH}" \
-&& pip3 install --upgrade \
-  pip \
-  pyyaml \
-  swig \
-&& pip cache purge >/dev/null \
-&& rm -rf "/opt/_internal/pipx"
 
 ENV CCACHE_DIR="/cache/ccache"
 ENV CCACHE_NOCOMPRESS="1"
@@ -87,6 +80,12 @@ RUN set -euxo pipefail >/dev/null \
 && curl -fsSL "https://github.com/binarylandia/build_libxml2/releases/download/libxml2-2.12.9-static-20241031113236/libxml2-2.12.9-static-20241031113236.tar.xz" | tar -C "/usr" -xJ \
 && ls /usr/include/libxml/xmlwriter.h \
 && ls /usr/lib/libxml2.a
+
+RUN set -euxo pipefail >/dev/null \
+&& curl -fsSL "https://github.com/binarylandia/build_gcc/releases/download/2024-10-31_17-39-28/gcc-14.2.0-host-x86_64-unknown-linux-gnu.2.17-2024-10-31_17-39-28.tar.xz" | tar -C "/usr" -xJ \
+&& ls "/usr/bin/gcc" \
+&& which gcc \
+&& gcc -v
 
 ARG USER=user
 ARG GROUP=user
@@ -113,5 +112,3 @@ RUN set -euxo pipefail >/dev/null \
 && chown -R ${UID}:${GID} "${HOME}"
 
 USER ${USER}
-
-ENTRYPOINT ["scl", "enable", "devtoolset-11", "--"]

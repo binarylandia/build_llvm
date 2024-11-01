@@ -8,6 +8,39 @@ BRANCH="llvmorg-18.1.8"
 #BRANCH="llvmorg-19.1.3"
 VERSION=${BRANCH#*-}
 
+
+export CFLAGS="-w -g0 -Os ${CFLAGS:-}"
+export CXXFLAGS="-w -g0 -Os ${CXXFLAGS:-}"
+export LDFLAGS="-s ${LDFLAGS:-}"
+
+export CFLAGS="-static-libgcc -static-libstdc++ ${CFLAGS:-}"
+export CXXFLAGS="-static-libgcc -static-libstdc++ ${CXXFLAGS:-}"
+export LDFLAGS="-static-libgcc -static-libstdc++ ${LDFLAGS:-}"
+
+export CFLAGS="-static --static ${CFLAGS:-}"
+export CXXFLAGS="-static --static ${CXXFLAGS:-}"
+export LDFLAGS="-static --static ${LDFLAGS:-}"
+
+export CFLAGS="-fPIC ${CFLAGS:-}"
+export CXXFLAGS="-fPIC ${CXXFLAGS:-}"
+export LDFLAGS="-fPIC ${LDFLAGS:-}"
+
+export CFLAGS="-pie -fPIE ${CFLAGS:-}"
+export CXXFLAGS="-pie -fPIE ${CXXFLAGS:-}"
+export LDFLAGS="-pie -fPIE ${LDFLAGS:-}"
+
+export CC="${CC:-gcc}"
+export CXX="${CXX:-g++}"
+export AR="${AR:-gcc-ar}"
+export NM="${NM:-gcc-nm}"
+export RANLIB="${RANLIB:-gcc-ranlib}"
+
+export CCACHE_DIR="/cache/ccache"
+export CCACHE_NOCOMPRESS="1"
+export CCACHE_MAXSIZE="50G"
+export CMAKE_C_COMPILER_LAUNCHER="ccache"
+export CMAKE_CXX_COMPILER_LAUNCHER="ccache"
+
 BUILD_DIR=".build"
 INSTALL_DIR="/opt/llvm"
 OUT_DIR=".out"
@@ -20,13 +53,15 @@ export build_time="$(date -u '+%Y-%m-%d_%H-%M-%S')"
 function abspath() {
   readlink -m "$1"
 }
+export -f abspath
 
 function log() {
   tee -a "${1}" | \
-    GREP_COLOR='01;31' stdbuf -oL grep --color=always -iE "err|error|fail|can not|cannot|can't|unable|exception|critical|fatal|reject|deny|denied|terminat|abort|panic|fault|" | \
-    GREP_COLOR='01;33' stdbuf -oL grep --color=always -iE "warn|warning|caution|alert|notice|" | \
-    GREP_COLOR='01;36' stdbuf -oL grep --color=always -iE "note|info|status|detail|"
+    GREP_COLOR='01;31' grep --line-buffered --color=always -iE "err|error|fail|can not|cannot|can't|unable|critical|fatal|reject|deny|denied|terminat|abort|panic|fault|invalid|undefined symbol|" | \
+    GREP_COLOR='01;33' grep --line-buffered --color=always -iE "warn|warning|caution|alert|notice|" | \
+    GREP_COLOR='01;36' grep --line-buffered --color=always -iE "note|info|status|detail|"
 }
+export -f log
 
 function package() {
   local input_dir="${1}"
@@ -36,6 +71,7 @@ function package() {
     | ${NICE} tar --no-recursion -cf - -C "${input_dir}" --files-from=- \
     | ${NICE} xz -T0 -k > "${output_tarball}"
 }
+export -f package
 
 export THIS_DIR="$(abspath "$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)")"
 export ROOT_DIR="$(abspath "${THIS_DIR}/..")"
@@ -60,26 +96,15 @@ pushd "$build_dir" >/dev/null
 
   pushd "${src_dir}" >/dev/null
 
-    export CFLAGS="-w -g0 -Os ${CFLAGS:-}"
-    export CXXFLAGS="-w -g0 -Os ${CXXFLAGS:-}"
-    export LDFLAGS="-s ${LDFLAGS:-}"
-
-    export CCACHE_DIR="/cache/ccache"
-    export CCACHE_NOCOMPRESS="1"
-    export CCACHE_MAXSIZE="50G"
-    export CMAKE_C_COMPILER_LAUNCHER="ccache"
-    export CMAKE_CXX_COMPILER_LAUNCHER="ccache"
-
-
     ${NICE} cmake -S llvm -B "build" \
       -Wno-dev -Wno-deprecated \
       -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
       -DCMAKE_BUILD_TYPE="MinSizeRel" \
       -DCMAKE_COLOR_MAKEFILE="OFF" \
-      -DCMAKE_VERBOSE_MAKEFILE="OFF" \
+      -DCMAKE_VERBOSE_MAKEFILE="ON" \
       \
-      -DPython_EXECUTABLE="/opt/python/cp38-cp38/bin/python3" \
-      -DSWIG_EXECUTABLE="/opt/python/cp38-cp38/bin/swig" \
+      -DPython_EXECUTABLE="python3.8" \
+      -DSWIG_EXECUTABLE="swig" \
       \
       -DLLVM_ENABLE_PROJECTS="clang;lld" \
       -DLLVM_TARGETS_TO_BUILD="X86;AArch64;ARM" \
@@ -90,7 +115,6 @@ pushd "$build_dir" >/dev/null
       -DCLANG_ENABLE_ARCMT="OFF" \
       -DCLANG_ENABLE_STATIC_ANALYZER="OFF" \
       -DCLANG_PLUGIN_SUPPORT="ON" \
-      -DLIBCXX_ENABLE_ABI_LINKER_SCRIPT="OFF" \
       -DLLVM_BUILD_TOOLS="OFF" \
       \
       -DLLVM_BUILD_TESTS="OFF" \
@@ -108,6 +132,20 @@ pushd "$build_dir" >/dev/null
       -DLLVM_INCLUDE_EXAMPLES="OFF" \
       -DLLVM_INCLUDE_TESTS="OFF" \
       -DLLVM_INCLUDE_UTILS="OFF" \
+      \
+      -DCMAKE_BUILD_WITH_INSTALL_RPATH="ON" \
+      -DLIBCLANG_BUILD_STATIC="ON" \
+      -DLLVM_BUILD_LLVM_C_DYLIB="OFF" \
+      -DLLVM_BUILD_LLVM_DYLIB="OFF" \
+      -DLLVM_BUILD_STATIC="ON" \
+      -DLLVM_ENABLE_PIC="OFF" \
+      -DLLVM_LINK_LLVM_DYLIB="OFF" \
+      -DLLVM_STATIC_LINK_CXX_STDLIB="ON" \
+      -DLLVM_USE_STATIC_ZSTD="ON" \
+      \
+      -DLLVM_USE_STATIC_LIBS="ON" \
+      -DBUILD_SHARED_LIBS="OFF" \
+      -DBUILD_SHARED_LIBS="OFF" \
       2>&1 | log "build.log"
 
     ${NICE} cmake --build "build" --parallel="${JOBS}" 2>&1 | log "build.log"
