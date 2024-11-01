@@ -80,10 +80,12 @@ RUN set -euxo pipefail >/dev/null \
 && ls /usr/lib/libxml2.a
 
 RUN set -euxo pipefail >/dev/null \
-&& curl -fsSL "https://github.com/binarylandia/build_gcc/releases/download/2024-10-31_17-39-28/gcc-14.2.0-host-x86_64-unknown-linux-gnu.2.17-2024-10-31_17-39-28.tar.xz" | tar -C "/usr" -xJ \
-&& ls "/usr/bin/gcc" \
-&& which gcc \
-&& gcc -v
+&& export LD_LIBRARY_PATH="/usr/lib:/usr/lib64:/usr/local/lib:/usr/local/lib64${LD_LIBRARY_PATH:+":${LD_LIBRARY_PATH}"}" \
+&& curl -fsSL "https://github.com/binarylandia/build_gcc/releases/download/2024-11-01_08-27-05/gcc-14.2.0-host-x86_64-unknown-linux-gnu.2.17-2024-11-01_08-27-05.tar.xz" | tar -C "/usr" -xJ \
+&& ls /usr/bin/gcc \
+&& gcc -v \
+&& ls /usr/bin/gcc-ar \
+&& gcc-ar --version
 
 ARG USER=user
 ARG GROUP=user
