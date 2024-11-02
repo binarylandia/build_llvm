@@ -24,10 +24,6 @@ export CFLAGS="-fPIC ${CFLAGS:-}"
 export CXXFLAGS="-fPIC ${CXXFLAGS:-}"
 export LDFLAGS="-fPIC ${LDFLAGS:-}"
 
-#export CFLAGS="-pie -fPIE ${CFLAGS:-}"
-#export CXXFLAGS="-pie -fPIE ${CXXFLAGS:-}"
-#export LDFLAGS="-pie -fPIE ${LDFLAGS:-}"
-
 export CC="${CC:-gcc}"
 export CXX="${CXX:-g++}"
 export AR="${AR:-gcc-ar}"
@@ -39,9 +35,6 @@ export CCACHE_NOCOMPRESS="1"
 export CCACHE_MAXSIZE="50G"
 export CMAKE_C_COMPILER_LAUNCHER="ccache"
 export CMAKE_CXX_COMPILER_LAUNCHER="ccache"
-
-export LIBRARY_PATH="/usr/lib:/usr/lib64:/usr/local/lib:/usr/local/lib64${LIBRARY_PATH:+":${LIBRARY_PATH}"}"
-export LD_LIBRARY_PATH="/usr/lib:/usr/lib64:/usr/local/lib:/usr/local/lib64${LD_LIBRARY_PATH:+":${LD_LIBRARY_PATH}"}"
 
 BUILD_DIR=".build"
 INSTALL_DIR="/opt/llvm"
@@ -182,8 +175,6 @@ pushd "$build_dir" >/dev/null
     readelf -d "${INSTALL_DIR}"/bin/clang || true
 
     "${INSTALL_DIR}"/bin/clang -v || true
-
-    cp "build.log" "${INSTALL_DIR}/"
 
     package "${INSTALL_DIR}" "${outdir}/llvm-${VERSION}-${build_time}.tar.xz"
   popd >/dev/null
