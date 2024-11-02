@@ -70,12 +70,12 @@ RUN set -euxo pipefail >/dev/null \
 && cmake --version
 
 RUN set -euxo pipefail >/dev/null \
-&& curl -fsSL "https://github.com/binarylandia/build_zlib/releases/download/zlib-1.3.1-static-20241031112952/zlib-1.3.1-static-20241031112952.tar.xz" | tar -C "/usr" -xJ \
+&& curl -fsSL "https://github.com/binarylandia/build_zlib/releases/download/zlib-1.3.1-static-20241102201733/zlib-1.3.1-static-20241102201733.tar.xz" | tar -C "/usr" -xJ \
 && ls /usr/include/zlib.h \
 && ls /usr/lib/libz.a
 
 RUN set -euxo pipefail >/dev/null \
-&& curl -fsSL "https://github.com/binarylandia/build_libxml2/releases/download/libxml2-2.12.9-static-20241031113236/libxml2-2.12.9-static-20241031113236.tar.xz" | tar -C "/usr" -xJ \
+&& curl -fsSL "https://github.com/binarylandia/build_libxml2/releases/download/libxml2-2.12.9-static-20241102202106/libxml2-2.12.9-static-20241102202106.tar.xz" | tar -C "/usr" -xJ \
 && ls /usr/include/libxml/xmlwriter.h \
 && ls /usr/lib/libxml2.a
 

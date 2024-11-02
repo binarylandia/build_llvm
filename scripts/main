@@ -12,13 +12,13 @@ export CFLAGS="-w -g0 -Os ${CFLAGS:-}"
 export CXXFLAGS="-w -g0 -Os ${CXXFLAGS:-}"
 export LDFLAGS="-s ${LDFLAGS:-}"
 
-export CFLAGS="-static-libgcc -static-libstdc++ ${CFLAGS:-}"
-export CXXFLAGS="-static-libgcc -static-libstdc++ ${CXXFLAGS:-}"
-export LDFLAGS="-static-libgcc -static-libstdc++ ${LDFLAGS:-}"
+#export CFLAGS="-static-libgcc -static-libstdc++ ${CFLAGS:-}"
+#export CXXFLAGS="-static-libgcc -static-libstdc++ ${CXXFLAGS:-}"
+#export LDFLAGS="-static-libgcc -static-libstdc++ ${LDFLAGS:-}"
 
-export CFLAGS="-static --static ${CFLAGS:-}"
-export CXXFLAGS="-static --static ${CXXFLAGS:-}"
-export LDFLAGS="-static --static ${LDFLAGS:-}"
+#export CFLAGS="-static --static ${CFLAGS:-}"
+#export CXXFLAGS="-static --static ${CXXFLAGS:-}"
+#export LDFLAGS="-static --static ${LDFLAGS:-}"
 
 export CFLAGS="-fPIC ${CFLAGS:-}"
 export CXXFLAGS="-fPIC ${CXXFLAGS:-}"
@@ -150,16 +150,9 @@ pushd "$build_dir" >/dev/null
       -DLLVM_BINUTILS_INCDIR="/usr/include" \
       -DLLVM_BUILD_RUNTIME="ON" \
       \
-      -DCMAKE_SKIP_RPATH="ON" \
-      -DCMAKE_BUILD_WITH_INSTALL_RPATH="ON" \
-      \
-      -DBUILD_SHARED_LIBS="OFF" \
-      -DLIBCLANG_BUILD_STATIC="ON" \
-      -DLLVM_BUILD_LLVM_C_DYLIB="OFF" \
-      -DLLVM_BUILD_LLVM_DYLIB="OFF" \
-      -DLLVM_BUILD_STATIC="ON" \
-      -DLLVM_ENABLE_PIC="OFF" \
-      -DLLVM_LINK_LLVM_DYLIB="OFF" \
+      -DBUILD_SHARED_LIBS="ON" \
+      -DLIBCLANG_BUILD_SHARED="ON" \
+      -DLLVM_ENABLE_PIC="ON" \
       -DLLVM_STATIC_LINK_CXX_STDLIB="ON" \
       -DLLVM_USE_STATIC_LIBS="ON" \
       -DLLVM_USE_STATIC_ZSTD="ON" \
