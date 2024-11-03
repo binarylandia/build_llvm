@@ -12,9 +12,9 @@ export CFLAGS="-w -g0 -Os ${CFLAGS:-}"
 export CXXFLAGS="-w -g0 -Os ${CXXFLAGS:-}"
 export LDFLAGS="-s ${LDFLAGS:-}"
 
-#export CFLAGS="-static-libgcc -static-libstdc++ ${CFLAGS:-}"
-#export CXXFLAGS="-static-libgcc -static-libstdc++ ${CXXFLAGS:-}"
-#export LDFLAGS="-static-libgcc -static-libstdc++ ${LDFLAGS:-}"
+export CFLAGS="-static-libgcc -static-libstdc++ ${CFLAGS:-}"
+export CXXFLAGS="-static-libgcc -static-libstdc++ ${CXXFLAGS:-}"
+export LDFLAGS="-static-libgcc -static-libstdc++ ${LDFLAGS:-}"
 
 #export CFLAGS="-static --static ${CFLAGS:-}"
 #export CXXFLAGS="-static --static ${CXXFLAGS:-}"
@@ -52,7 +52,7 @@ export -f abspath
 
 function log() {
   tee -a "${1}" | \
-    GREP_COLOR='01;31' grep --line-buffered --color=always -iE "err|error|fail|can not|cannot|can't|unable|critical|fatal|reject|deny|denied|terminat|abort|panic|fault|invalid|undefined symbol|" | \
+    GREP_COLOR='01;31' grep --line-buffered --color=always -iE "err|error|fail|can not|cannot|can't|unable|critical|fatal|reject|deny|denied|terminat|abort|panic|fault|invalid|undefined symbol|not found|" | \
     GREP_COLOR='01;33' grep --line-buffered --color=always -iE "warn|warning|caution|alert|notice|" | \
     GREP_COLOR='01;36' grep --line-buffered --color=always -iE "note|info|status|detail|"
 }
@@ -95,33 +95,34 @@ pushd "$build_dir" >/dev/null
       -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
       -DCMAKE_BUILD_TYPE="MinSizeRel" \
       -DCMAKE_COLOR_MAKEFILE="OFF" \
-      -DCMAKE_VERBOSE_MAKEFILE="ON" \
-      \
-      -DPython_EXECUTABLE="python3.8" \
-      -DSWIG_EXECUTABLE="swig" \
-      \
-      -DLLVM_ENABLE_PROJECTS="clang;flang;lld" \
+      -DCMAKE_VERBOSE_MAKEFILE="OFF" \
+      -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra;compiler-rt;flang;lld;lldb" \
       -DLLVM_TARGETS_TO_BUILD="X86;AArch64;ARM" \
-      -DLLVM_TEMPORARILY_ALLOW_OLD_TOOLCHAIN="ON" \
-      -DLLVM_INSTALL_TOOLCHAIN_ONLY="ON" \
+      -DLLVM_STATIC_LINK_CXX_STDLIB="ON" \
       \
-      -DCLANG_BUILD_TOOLS="ON" \
-      -DCLANG_ENABLE_ARCMT="OFF" \
-      -DCLANG_ENABLE_STATIC_ANALYZER="OFF" \
-      -DCLANG_INCLUDE_TOOLS="ON" \
-      -DCLANG_INSTALL_TOOLS="ON" \
-      -DCLANG_PLUGIN_SUPPORT="ON" \
+      -DLLVM_INSTALL_TOOLCHAIN_ONLY="ON" \
       \
       -DLLVM_BUILD_TOOLS="ON" \
       -DLLVM_INCLUDE_TOOLS="ON" \
       -DLLVM_INSTALL_TOOLS="ON" \
       -DLLVM_TOOLS_INSTALL_DIR="bin" \
       \
-      -DLLVM_BUILD_BENCHMARKS="OFF" \
-      -DLLVM_BUILD_DOCS="OFF" \
-      -DLLVM_BUILD_EXAMPLES="OFF" \
-      -DLLVM_BUILD_TESTS="OFF" \
-      -DLLVM_BUILD_UTILS="OFF" \
+      -DCLANG_BUILD_TOOLS="ON" \
+      -DCLANG_INCLUDE_TOOLS="ON" \
+      -DCLANG_INSTALL_TOOLS="ON" \
+      -DCLANG_PLUGIN_SUPPORT="ON" \
+      \
+      -DLLVM_BUILD_RUNTIME="ON" \
+      -DLLVM_ENABLE_FFI="ON" \
+      -DLLVM_ENABLE_RTTI="ON" \
+      -DLLVM_ENABLE_THREADS="ON" \
+      -DLLVM_ENABLE_ZLIB="ON" \
+      -DLLVM_ENABLE_ZSTD="ON" \
+      -DLLVM_USE_PERF="ON" \
+      \
+      -DLLVM_BINUTILS_INCDIR="/usr/include" \
+      \
+      -DLLVM_ENABLE_BINDINGS="OFF" \
       -DLLVM_INCLUDE_BENCHMARKS="OFF" \
       -DLLVM_INCLUDE_DOCS="OFF" \
       -DLLVM_INCLUDE_EXAMPLES="OFF" \
@@ -132,30 +133,6 @@ pushd "$build_dir" >/dev/null
       -DLLVM_INSTALL_EXAMPLES="OFF" \
       -DLLVM_INSTALL_TESTS="OFF" \
       -DLLVM_INSTALL_UTILS="OFF" \
-      \
-      -DLLVM_ENABLE_DOXYGEN="OFF" \
-      -DLLVM_ENABLE_LIBEDIT="OFF" \
-      -DLLVM_ENABLE_LIBXML2="OFF" \
-      -DLLVM_ENABLE_OCAMLDOC="OFF" \
-      -DLLVM_ENABLE_SPHINX="OFF" \
-      -DLLVM_ENABLE_TERMINFO="OFF" \
-      -DLLVM_ENABLE_THREADS="ON" \
-      \
-      -DLLVM_ENABLE_ZLIB="ON" \
-      -DLLVM_ENABLE_ZSTD="ON" \
-      -DLLVM_ENABLE_LIBCXX="OFF" \
-      -DLLVM_ENABLE_FFI="ON" \
-      -DLLVM_ENABLE_RTTI="ON" \
-      -DLLVM_USE_PERF="ON" \
-      -DLLVM_BINUTILS_INCDIR="/usr/include" \
-      -DLLVM_BUILD_RUNTIME="ON" \
-      \
-      -DBUILD_SHARED_LIBS="ON" \
-      -DLIBCLANG_BUILD_SHARED="ON" \
-      -DLLVM_ENABLE_PIC="ON" \
-      -DLLVM_STATIC_LINK_CXX_STDLIB="ON" \
-      -DLLVM_USE_STATIC_LIBS="ON" \
-      -DLLVM_USE_STATIC_ZSTD="ON" \
       \
       2>&1 | log "build.log"
 

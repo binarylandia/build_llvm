@@ -75,9 +75,20 @@ RUN set -euxo pipefail >/dev/null \
 && ls /usr/lib/libz.a
 
 RUN set -euxo pipefail >/dev/null \
+&& curl -fsSL "https://github.com/binarylandia/build_zstd/releases/download/zstd-1.5.6-static-20241103104549/zstd-1.5.6-static-20241103104549.tar.xz" | tar -C "/usr" -xJ \
+&& ls /usr/bin/zstd \
+&& ls /usr/include/zstd.h \
+&& ls /usr/lib/libzstd.a
+
+RUN set -euxo pipefail >/dev/null \
 && curl -fsSL "https://github.com/binarylandia/build_libxml2/releases/download/libxml2-2.12.9-static-20241102202106/libxml2-2.12.9-static-20241102202106.tar.xz" | tar -C "/usr" -xJ \
 && ls /usr/include/libxml/xmlwriter.h \
 && ls /usr/lib/libxml2.a
+
+RUN set -euxo pipefail >/dev/null \
+&& curl -fsSL "https://github.com/binarylandia/build_libffi/releases/download/libffi-3.4.5-static-20241103102436/libffi-3.4.5-static-20241103102436.tar.xz" | tar -C "/usr" -xJ \
+&& ls /usr/include/ffi.h \
+&& ls /usr/lib/libffi.a
 
 RUN set -euxo pipefail >/dev/null \
 && export LD_LIBRARY_PATH="/usr/lib:/usr/lib64:/usr/local/lib:/usr/local/lib64${LD_LIBRARY_PATH:+":${LD_LIBRARY_PATH}"}" \
