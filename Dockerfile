@@ -24,11 +24,14 @@ RUN set -euxo pipefail >/dev/null \
   curl \
   git \
   glibc-static \
+  gzip \
   make \
   parallel \
+  pigz \
   sudo \
   tar \
   xz \
+  zstd \
 >/dev/null \
 && yum clean all >/dev/null \
 && rm -rf /var/cache/yum
