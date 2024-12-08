@@ -123,7 +123,7 @@ pushd "$build_dir" >/dev/null
       -DCMAKE_BUILD_TYPE="MinSizeRel" \
       -DCMAKE_COLOR_MAKEFILE="OFF" \
       -DCMAKE_VERBOSE_MAKEFILE="OFF" \
-      -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra;compiler-rt;flang;lld;lldb" \
+      -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra;compiler-rt;flang;lld;lldb;openmp" \
       -DLLVM_TARGETS_TO_BUILD="X86;AArch64;ARM" \
       -DLLVM_STATIC_LINK_CXX_STDLIB="ON" \
       \
@@ -137,6 +137,7 @@ pushd "$build_dir" >/dev/null
       -DCLANG_BUILD_TOOLS="ON" \
       -DCLANG_INCLUDE_TOOLS="ON" \
       -DCLANG_INSTALL_TOOLS="ON" \
+      -DCLANG_OPENMP_RUNTIME="libomp" \
       -DCLANG_PLUGIN_SUPPORT="ON" \
       \
       -DLLVM_BUILD_RUNTIME="ON" \
