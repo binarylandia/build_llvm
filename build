@@ -9,16 +9,12 @@ DOCKER_REPO="llvm_builder"
 DOCKER_IMAGE_NAME_SAFE="${DOCKER_REPO//\//-}"
 DOCKER_CONTAINER_NAME="${DOCKER_IMAGE_NAME_SAFE}-$(date -u "+%Y-%m-%d_%H-%M-%S_%3NZ")"
 
-DOCKER_BASE_IMAGE="quay.io/pypa/manylinux2014_x86_64"
-# DOCKER_BASE_IMAGE="ubuntu:24.04"
-
 USER="user"
 GROUP="user"
 
 docker build \
   --tag="$DOCKER_IMAGE_NAME_SAFE" \
   --network=host \
-  --build-arg="DOCKER_BASE_IMAGE=${DOCKER_BASE_IMAGE}" \
   --build-arg="UID=$(id -u)" \
   --build-arg="GID=$(id -g)" \
   --build-arg="USER=${USER}" \
@@ -45,4 +41,4 @@ docker run -it --rm \
   --env="LANG=C.UTF-8" \
   --ulimit core=0 \
   "$DOCKER_IMAGE_NAME_SAFE" \
-  bash ./scripts/main
+  bash -c "${@:-./scripts/main}"

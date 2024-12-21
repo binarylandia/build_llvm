@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+triplet="${1}"
+dest=${2:-"/usr/local/${triplet}"}
+mkdir -p "${dest}"
+
+curl -fsSL "https://github.com/binarylandia/build_libffi/releases/download/libffi-3.4.5-static-20241103102436/libffi-3.4.5-static-20241103102436.tar.xz" \
+| tar -C "${dest}" -xJ \
+
+ls "${dest}/include/ffi.h"
+ls "${dest}/lib/libffi.a"

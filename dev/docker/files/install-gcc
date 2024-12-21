@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+dest=${1:-"/usr/local"}
+mkdir -p "${dest}"
+
+curl -fsSL "https://github.com/binarylandia/build_gcc/releases/download/2024-12-21_14-10-37/gcc-14.2.0-host-x86_64-unknown-linux-gnu.2.17-2024-12-21_14-10-37.tar.gz" \
+  | tar -C "${dest}" -xz
+
+ls "${dest}/bin/gcc"
+"${dest}/bin/gcc" -v
+
+ls "${dest}/bin/gcc-ar"
+"${dest}/bin/gcc-ar" --version

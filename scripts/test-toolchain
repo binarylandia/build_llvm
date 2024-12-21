@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+cat > input_lib.h << 'EOF'
+const char* get_input_string();
+void verify_string(const char* original, const char* decompressed);
+EOF
+
+cat > input_lib.c << 'EOF'
+#include <stdio.h>
+#include <string.h>
+
+const char* get_input_string() {
+    return "Hello, world!";
+}
+
+void verify_string(const char* original, const char* decompressed) {
+    if (strcmp(original, decompressed) == 0) {
+        printf("Verification successful: \"%s\"\n", decompressed);
+    } else {
+        printf("Verification failed.\n");
+    }
+}
+EOF
+
+cat > test.c << 'EOF'
+#include <stdio.h>
+#include <string.h>
+#include <assert.h>
+#include <zlib.h>
+#include "input_lib.h"
+
+#define BUFFER_SIZE 1024
+
+void compress_decompress(const char* input) {
+  uLong src_len = strlen(input) + 1; // Including null terminator
+  uLong comp_len = compressBound(src_len);
+  uLong decomp_len = src_len;
+
+  unsigned char comp_buf[BUFFER_SIZE];
+  unsigned char decomp_buf[BUFFER_SIZE];
+
+  // Compress the input
+  int comp_res = compress(comp_buf, &comp_len, (const unsigned char*)input, src_len);
+  assert(comp_res == Z_OK);
+
+  // Decompress the input
+  int decomp_res = uncompress(decomp_buf, &decomp_len, comp_buf, comp_len);
+  assert(decomp_res == Z_OK);
+
+  // Output results
+  printf("Original: %s\nCompressed: %lu bytes\nDecompressed: %s\n", input, comp_len, decomp_buf);
+  verify_string(input, (char*)decomp_buf);
+}
+
+int main() {
+  const char* test_string = get_input_string();
+  compress_decompress(test_string);
+  return 0;
+}
+EOF
+
+# Create Makefile
+cat > Makefile << 'EOF'
+CC ?= gcc
+LD ?= ld
+CFLAGS ?= -Wall -Wextra -O2
+CFLAGS += $(shell pkg-config --cflags zlib)
+LDFLAGS ?= -L. -linput $(shell pkg-config --libs zlib)
+
+TARGET = test_program
+LIB = libinput.a
+SRC = test.c
+LIB_SRC = input_lib.c
+OBJ = $(SRC:.c=.o)
+LIB_OBJ = $(LIB_SRC:.c=.o)
+
+.PHONY: all clean run
+
+all: $(TARGET)
+
+$(LIB): $(LIB_OBJ)
+	ar rcs $@ $^
+
+$(TARGET): $(OBJ) $(LIB)
+	$(CC) -o $@ $^ $(LDFLAGS)
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+clean:
+	rm -f $(TARGET) $(OBJ) $(LIB) $(LIB_OBJ)
+
+run: $(TARGET)
+	./$(TARGET)
+
+EOF
+
+make
+
+output=$(./test_program)
+status=$?
+
+expected_output="Original: Hello, world!
+Compressed: 22 bytes
+Decompressed: Hello, world!
+Verification successful: \"Hello, world!\""
+
+if [[ $status -ne 0 ]]; then
+    echo "Test failed: Unexpected error with exit status $status" >&2
+    exit 1
+elif [[ "$output" != "$expected_output" ]]; then
+    echo "Test failed: Output does not match expected" >&2
+    printf "%q\n" "Expected: $expected_output" >&2
+    printf "%q\n" "Received: $output" >&2
+    exit 1
+fi
+
+make -s clean
+rm -f Makefile test.c input_lib.h input_lib.c

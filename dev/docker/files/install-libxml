@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+triplet="${1}"
+dest=${2:-"/usr/local/${triplet}"}
+mkdir -p "${dest}"
+
+curl -fsSL "https://github.com/binarylandia/staticbourg/releases/download/2024-11-13_07-59-39/libxml2-2.12.9-static-${triplet}-2024-11-13_07-59-39.tar.gz" \
+  | tar -C "${dest}" -xz
+
+ls "${dest}/include/libxml/xmlreader.h"
+ls "${dest}/lib/libxml2.a"

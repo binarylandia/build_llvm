@@ -12,23 +12,9 @@ export CFLAGS="-w -g0 -Os ${CFLAGS:-}"
 export CXXFLAGS="-w -g0 -Os ${CXXFLAGS:-}"
 export LDFLAGS="-s ${LDFLAGS:-}"
 
-export CFLAGS="-static-libgcc -static-libstdc++ ${CFLAGS:-}"
-export CXXFLAGS="-static-libgcc -static-libstdc++ ${CXXFLAGS:-}"
-export LDFLAGS="-static-libgcc -static-libstdc++ ${LDFLAGS:-}"
-
-#export CFLAGS="-static --static ${CFLAGS:-}"
-#export CXXFLAGS="-static --static ${CXXFLAGS:-}"
-#export LDFLAGS="-static --static ${LDFLAGS:-}"
-
-export CFLAGS="-fPIC ${CFLAGS:-}"
-export CXXFLAGS="-fPIC ${CXXFLAGS:-}"
-export LDFLAGS="-fPIC ${LDFLAGS:-}"
-
-export CC="${CC:-gcc}"
-export CXX="${CXX:-g++}"
-export AR="${AR:-gcc-ar}"
-export NM="${NM:-gcc-nm}"
-export RANLIB="${RANLIB:-gcc-ranlib}"
+export CFLAGS="-fPIC -static-libgcc -static-libstdc++ ${CFLAGS:-}"
+export CXXFLAGS="-fPIC -static-libgcc -static-libstdc++ ${CXXFLAGS:-}"
+export LDFLAGS="-fPIC -static-libgcc -static-libstdc++ ${LDFLAGS:-}"
 
 export CCACHE_DIR="/cache/ccache"
 export CCACHE_NOCOMPRESS="1"
@@ -62,7 +48,7 @@ function package_xz() {
   local input_dir="${1}"
   local output_basename="${2}"
   mkdir -p "$(dirname "${output_basename}")"
-  ${NICE} bash -c "find '${input_dir}' -printf '%P\\n' | tar --posix -cf - -C '${input_dir}' --files-from=- | xz -T $(nproc) -5 > '${output_basename}.tar.xz'"
+  ${NICE} bash -c "find '${input_dir}' -printf '%P\\n' | tar --posix -cf - -C '${input_dir}' --files-from=- | xz -T $(nproc) -4 > '${output_basename}.tar.xz'"
 }
 export -f package_xz
 
@@ -78,7 +64,7 @@ function package_zst() {
   local input_dir="${1}"
   local output_basename="${2}"
   mkdir -p "$(dirname "${output_basename}")"
-  ${NICE} bash -c "find '${input_dir}' -printf '%P\\n' | tar --posix -cf - -C '${input_dir}' --files-from=- | zstdmt -T$(nproc) -7 > '${output_basename}.tar.zst'"
+  ${NICE} bash -c "find '${input_dir}' -printf '%P\\n' | tar --posix -cf - -C '${input_dir}' --files-from=- | zstdmt -T$(nproc) -9 > '${output_basename}.tar.zst'"
 }
 export -f package_zst
 
