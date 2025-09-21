@@ -5,7 +5,8 @@ set -euxo pipefail
 LLVM_REPO_URL="https://github.com/llvm/llvm-project"
 #BRANCH="llvmorg-17.0.6"
 #BRANCH="llvmorg-18.1.8"
-BRANCH="llvmorg-19.1.5"
+# BRANCH="llvmorg-19.1.5"
+BRANCH="llvmorg-20.1.8"
 VERSION=${BRANCH#*-}
 
 export CFLAGS="-w -g0 -Os ${CFLAGS:-}"
@@ -95,9 +96,9 @@ pushd "$build_dir" >/dev/null
     git clone --recursive --depth=1 -b "${BRANCH}" "${LLVM_REPO_URL}" "${src_dir}"
 
     pushd "${src_dir}" >/dev/null
-    for patch in $(ls "${ROOT_DIR}/patches/"*.patch | sort); do
-      patch -N --silent --force -p1 <"$patch"
-    done
+    # for patch in $(ls "${ROOT_DIR}/patches/"*.patch | sort); do
+    #   patch -N --silent --force -p1 <"$patch"
+    # done
     popd >/dev/null
   fi
 
@@ -109,7 +110,8 @@ pushd "$build_dir" >/dev/null
       -DCMAKE_BUILD_TYPE="MinSizeRel" \
       -DCMAKE_COLOR_MAKEFILE="OFF" \
       -DCMAKE_VERBOSE_MAKEFILE="OFF" \
-      -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra;compiler-rt;flang;lld;lldb;openmp" \
+      -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra;flang;lld;lldb;openmp" \
+      -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind;compiler-rt" \
       -DLLVM_TARGETS_TO_BUILD="X86;AArch64;ARM" \
       -DLLVM_STATIC_LINK_CXX_STDLIB="ON" \
       \
