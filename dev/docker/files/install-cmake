@@ -4,7 +4,7 @@ set -euxo pipefail
 dest=${1:-"/usr/local"}
 mkdir -p "${dest}"
 
-curl -fsSL "https://github.com/Kitware/CMake/releases/download/v3.30.5/cmake-3.30.5-linux-x86_64.tar.gz" \
+curl -fsSL "https://github.com/Kitware/CMake/releases/download/v4.1.1/cmake-4.1.1-linux-x86_64.tar.gz" \
   | tar --strip-components=1 -C "/usr" -xz
 
 ls "${dest}/bin/cmake" >/dev/null
