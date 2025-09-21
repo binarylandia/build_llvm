@@ -6,7 +6,8 @@ LLVM_REPO_URL="https://github.com/llvm/llvm-project"
 #BRANCH="llvmorg-17.0.6"
 #BRANCH="llvmorg-18.1.8"
 # BRANCH="llvmorg-19.1.5"
-BRANCH="llvmorg-20.1.8"
+# BRANCH="llvmorg-20.1.8"
+BRANCH="llvmorg-21.1.1"
 VERSION=${BRANCH#*-}
 
 export CFLAGS="-w -g0 -Os ${CFLAGS:-}"
