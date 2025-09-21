@@ -28,7 +28,7 @@ INSTALL_DIR="/opt/llvm"
 OUT_DIR=".out"
 
 export NICE="nice -19 ionice -c2 -n5"
-export JOBS="${JOBS:=$(($(nproc --all) + 2))}"
+export JOBS="${JOBS:=$(($(nproc --all) / 2))}"
 
 export build_time="$(date -u '+%Y-%m-%d_%H-%M-%S')"
 
