@@ -1,6 +1,4 @@
-# build_llvm
-
-Prebuilt LLVM/Clang toolchain for x86_64 Linux.
+# Prebuilt LLVM/Clang toolchain for x86_64 Linux
 
 ## [Releases](https://github.com/binarylandia/build_llvm/releases)
 
