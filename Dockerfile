@@ -74,6 +74,11 @@ RUN /install-libffi "${HOST_TUPLE}" "${PREFIX_HOST}"
 COPY --link "dev/docker/files/install-libxml" "/"
 RUN /install-libxml "${HOST_TUPLE}" "${PREFIX_HOST}"
 
+COPY --link "dev/docker/files/install-bash" "/"
+COPY --link "dev/docker/files/bash.sha256" "/install-bash.sha256"
+RUN bash /install-bash
+SHELL ["/usr/local/bin/bash", "-euxo", "pipefail", "-c"]
+
 RUN yum install -y glibc-static >/dev/null \
 && yum clean all >/dev/null \
 && rm -rf /var/cache/yum

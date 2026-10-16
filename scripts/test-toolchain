@@ -96,11 +96,7 @@ EOF
   for target in wasm32 wasm64; do
     clang --target="${target}-unknown-unknown" -O2 -c "${test_dir}/wasm.c" -o "${test_dir}/${target}.o"
     llvm-ar rcs "${test_dir}/${target}.a" "${test_dir}/${target}.o"
-    local memory64=()
-    if [[ "${target}" == wasm64 ]]; then
-      memory64=(-mwasm64)
-    fi
-    wasm-ld "${memory64[@]}" --no-entry --export=add "${test_dir}/${target}.a" -o "${test_dir}/${target}.wasm"
+    wasm-ld -m "${target}" --no-entry --export=add "${test_dir}/${target}.a" -o "${test_dir}/${target}.wasm"
     local magic
     magic="$(od -An -tx1 -N8 "${test_dir}/${target}.wasm")"
     [[ "${magic}" == ' 00 61 73 6d 01 00 00 00' ]]

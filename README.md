@@ -31,7 +31,7 @@ For native static C++ programs with the LLVM runtimes, use:
 clang++ -fuse-ld=lld -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind -static -pthread program.cpp -ldl
 ```
 
-The static OpenMP runtime is tested with dynamic glibc. Fully static OpenMP executables are not supported by this glibc-based build.
+OpenMP programs link libomp statically and use the system glibc.
 
 ## Components
 
