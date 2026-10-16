@@ -36,6 +36,13 @@ main() {
   if [[ ! -f "${source_dir}/llvm/CMakeLists.txt" ]]; then
     tar -xJf "${archive}" --strip-components=1 -C "${source_dir}"
   fi
+  local patch_file
+  for patch_file in "${ROOT_DIR}/patches/"*.patch; do
+    if [[ ! -f "${source_dir}/.${patch_file##*/}.applied" ]]; then
+      patch --fuzz=0 --forward -p1 -d "${source_dir}" <"${patch_file}"
+      touch "${source_dir}/.${patch_file##*/}.applied"
+    fi
+  done
 
   export CFLAGS="-fPIC -g0 -Os ${CFLAGS:-}"
   export CXXFLAGS="-fPIC -g0 -Os ${CXXFLAGS:-}"
@@ -70,7 +77,10 @@ main() {
     -DLLVM_ENABLE_RTTI=ON \
     -DLLVM_ENABLE_THREADS=ON \
     -DLLVM_ENABLE_ZLIB=FORCE_ON \
+    -DZLIB_LIBRARY_RELEASE=/usr/lib/libz.a \
+    -DZLIB_USE_STATIC_LIBS=ON \
     -DLLVM_ENABLE_ZSTD=FORCE_ON \
+    -DLLVM_USE_STATIC_ZSTD=ON \
     -DLLVM_USE_PERF=ON \
     -DLLDB_ENABLE_PYTHON=OFF \
     -DLLDB_ENABLE_CURSES=OFF \

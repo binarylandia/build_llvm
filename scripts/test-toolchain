@@ -19,6 +19,34 @@ main() {
   lldb --version
   flang --version
 
+  local tool
+  for tool in "${install_dir}/bin/"* "${install_dir}/lib/"*.so*; do
+    [[ -f "${tool}" ]] || continue
+    [[ "$(od -An -tx1 -N4 "${tool}")" == ' 7f 45 4c 46' ]] || continue
+    readelf --dynamic "${tool}" >"${test_dir}/dynamic.txt"
+    if grep -E '\(NEEDED\).*\[(libz\.so|libzstd\.so|libquadmath\.so|libgcc_s\.so|libstdc\+\+\.so)' "${test_dir}/dynamic.txt"; then
+      printf 'Unexpected shared runtime dependency in %s\n' "${tool}" >&2
+      return 1
+    fi
+    readelf --version-info "${tool}" >"${test_dir}/versions.txt"
+    awk -v tool="${tool}" '
+      /Name: GLIBC_/ {
+        for (i = 1; i < NF; i++) {
+          if ($i == "Name:") {
+            name = $(i + 1)
+            sub(/^GLIBC_/, "", name)
+            split(name, version, ".")
+            if (version[1] > 2 || (version[1] == 2 && version[2] > 17)) {
+              print tool ": requires glibc " name " beyond baseline 2.17" > "/dev/stderr"
+              failed = 1
+            }
+          }
+        }
+      }
+      END { exit failed }
+    ' "${test_dir}/versions.txt"
+  done
+
   cat >"${test_dir}/main.c" <<'EOF'
 int main(void) { return 0; }
 EOF
