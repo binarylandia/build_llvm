@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # check=experimental=all
-FROM quay.io/pypa/manylinux2014_x86_64
+FROM quay.io/pypa/manylinux2014_x86_64@sha256:f6a6f153c9cf45470507ebbc27013e5db14ce21331b62fd2c540561f25e5f0a5
 
 SHELL ["bash", "-euxo", "pipefail", "-c"]
 
@@ -31,11 +31,12 @@ RUN set -euxo pipefail >/dev/null \
   pigz \
   sudo \
   tar \
+  unzip \
   xz \
   zstd \
 >/dev/null \
 && yum clean all >/dev/null \
-&& rm -rf /var/cache/yum \
+&& rm -rf /var/cache/yum
 
 ARG PREFIX_HOST="/usr"
 ARG HOST_GCC_DIR="/usr"
@@ -48,6 +49,9 @@ RUN /install-gcc "${HOST_GCC_DIR}"
 
 COPY --link "dev/docker/files/install-cmake" "/"
 RUN /install-cmake
+
+COPY --link "dev/docker/files/install-ninja" "/"
+RUN bash /install-ninja
 
 COPY --link "dev/docker/files/install-ccache" "/"
 RUN /install-ccache

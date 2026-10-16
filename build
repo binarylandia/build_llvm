@@ -14,7 +14,6 @@ GROUP="user"
 
 docker build \
   --tag="$DOCKER_IMAGE_NAME_SAFE" \
-  --network=host \
   --build-arg="UID=$(id -u)" \
   --build-arg="GID=$(id -g)" \
   --build-arg="USER=${USER}" \
@@ -28,6 +27,7 @@ docker run -it --rm \
   --name="$DOCKER_CONTAINER_NAME" \
   --hostname="${DOCKER_IMAGE_NAME_SAFE}" \
   --user="$(id -u):$(id -g)" \
+  --cap-drop=ALL \
   --volume="$(pwd):/workdir" \
   --volume="$(pwd)/.opt:/opt/llvm" \
   --volume="$(pwd)/.cache/ccache:/cache/ccache" \

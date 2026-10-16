@@ -1,169 +1,100 @@
 #!/usr/bin/env bash
+#
+# Usage: scripts/main [LLVM_VERSION]
+# Build, verify, and package LLVM inside the builder container.
+# JOBS controls compile parallelism; LINK_JOBS controls link parallelism.
+set -euo pipefail
+trap "exit" INT
 
-set -euxo pipefail
+THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+ROOT_DIR="$(dirname "${THIS_DIR}")"
 
-LLVM_REPO_URL="https://github.com/llvm/llvm-project"
-#BRANCH="llvmorg-17.0.6"
-#BRANCH="llvmorg-18.1.8"
-# BRANCH="llvmorg-19.1.5"
-# BRANCH="llvmorg-20.1.8"
-BRANCH="llvmorg-21.1.1"
-VERSION=${BRANCH#*-}
-
-export CFLAGS="-w -g0 -Os ${CFLAGS:-}"
-export CXXFLAGS="-w -g0 -Os ${CXXFLAGS:-}"
-export LDFLAGS="-s ${LDFLAGS:-}"
-
-export CFLAGS="-fPIC -static-libgcc -static-libstdc++ ${CFLAGS:-}"
-export CXXFLAGS="-fPIC -static-libgcc -static-libstdc++ ${CXXFLAGS:-}"
-export LDFLAGS="-fPIC -static-libgcc -static-libstdc++ ${LDFLAGS:-}"
-
-export CCACHE_DIR="/cache/ccache"
-export CCACHE_NOCOMPRESS="1"
-export CCACHE_MAXSIZE="50G"
-export CMAKE_C_COMPILER_LAUNCHER="ccache"
-export CMAKE_CXX_COMPILER_LAUNCHER="ccache"
-
-BUILD_DIR=".build"
-INSTALL_DIR="/opt/llvm"
-OUT_DIR=".out"
-
-export NICE="nice -19 ionice -c2 -n5"
-export JOBS="${JOBS:=$(($(nproc --all) / 2))}"
-
-export build_time="$(date -u '+%Y-%m-%d_%H-%M-%S')"
-
-function abspath() {
-  readlink -m "$1"
-}
-export -f abspath
-
-function log() {
-  tee -a "${1}" | \
-    GREP_COLOR='01;31' grep --line-buffered --color=always -iE "\b(err|error|fail|can not|cannot|can't|unable|critical|fatal|reject|deny|denied|terminat|abort|panic|fault|invalid|undefined symbol|not found|)\b" | \
-    GREP_COLOR='01;33' grep --line-buffered --color=always -iE "\b(warn|warning|caution|alert|notice|)\b" | \
-    GREP_COLOR='01;36' grep --line-buffered --color=always -iE "\b(note|info|status|detail|)\b"
-}
-export -f log
-
-function package_xz() {
-  local input_dir="${1}"
-  local output_basename="${2}"
-  mkdir -p "$(dirname "${output_basename}")"
-  ${NICE} bash -c "find '${input_dir}' -printf '%P\\n' | tar --posix -cf - -C '${input_dir}' --files-from=- | xz -T $(nproc) -4 > '${output_basename}.tar.xz'"
-}
-export -f package_xz
-
-function package_gz() {
-  local input_dir="${1}"
-  local output_basename="${2}"
-  mkdir -p "$(dirname "${output_basename}")"
-  ${NICE} bash -c "find '${input_dir}' -printf '%P\\n' | tar --posix -cf - -C '${input_dir}' --files-from=- | pigz -p $(nproc) -7 > '${output_basename}.tar.gz'"
-}
-export -f package_gz
-
-function package_zst() {
-  local input_dir="${1}"
-  local output_basename="${2}"
-  mkdir -p "$(dirname "${output_basename}")"
-  ${NICE} bash -c "find '${input_dir}' -printf '%P\\n' | tar --posix -cf - -C '${input_dir}' --files-from=- | zstdmt -T$(nproc) -9 > '${output_basename}.tar.zst'"
-}
-export -f package_zst
-
-function package_all() {
-  local input_dir="${1}"
-  local output_basename="${2}"
-
-  parallel ::: \
-    "package_xz '${input_dir}' '${output_basename}'" \
-    "package_gz '${input_dir}' '${output_basename}'" \
-    "package_zst '${input_dir}' '${output_basename}'"
-}
-export -f package_all
-
-export THIS_DIR="$(abspath "$(cd "$(dirname "${BASH_SOURCE[0]}")"; pwd)")"
-export ROOT_DIR="$(abspath "${THIS_DIR}/..")"
-
-build_dir="$(abspath ${BUILD_DIR})"
-mkdir -p "${build_dir}"
-outdir="$(abspath "${OUT_DIR}")"
-mkdir -p "${outdir}"
-
-pushd "$build_dir" >/dev/null
-{
-  src_dir="llvm-${VERSION}"
-
-  if [ ! -d "${src_dir}" ]; then
-    git clone --recursive --depth=1 -b "${BRANCH}" "${LLVM_REPO_URL}" "${src_dir}"
-
-    pushd "${src_dir}" >/dev/null
-    # for patch in $(ls "${ROOT_DIR}/patches/"*.patch | sort); do
-    #   patch -N --silent --force -p1 <"$patch"
-    # done
-    popd >/dev/null
+main() {
+  local version="${1:-${LLVM_VERSION:-22.1.8}}"
+  local jobs="${JOBS:-6}"
+  local link_jobs="${LINK_JOBS:-1}"
+  local source_name="llvm-project-${version}.src.tar.xz"
+  local source_dir="${ROOT_DIR}/.build/llvm-${version}"
+  local install_dir="/opt/llvm/${version}"
+  local build_time
+  build_time="$(date -u '+%Y-%m-%d_%H-%M-%S')"
+  local output_dir="${ROOT_DIR}/.out/llvm-${version}-${build_time}"
+  local archive="${ROOT_DIR}/tarballs/${source_name}"
+  local checksum
+  checksum="$(awk -v name="${source_name}" '$2 == name {print $1}' "${THIS_DIR}/sources.sha256")"
+  if [[ ! "${checksum}" =~ ^[a-f0-9]{64}$ ]]; then
+    printf 'No verified source checksum for LLVM %s\n' "${version}" >&2
+    return 1
+  fi
+  mkdir -p "${ROOT_DIR}/tarballs" "${source_dir}" "${output_dir}" "${install_dir}"
+  if [[ ! -f "${archive}" ]]; then
+    curl --fail --location --retry 3 --output "${archive}.part" \
+      "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/${source_name}"
+    mv -- "${archive}.part" "${archive}"
+  fi
+  printf '%s  %s\n' "${checksum}" "${archive}" | sha256sum --check
+  if [[ ! -f "${source_dir}/llvm/CMakeLists.txt" ]]; then
+    tar -xJf "${archive}" --strip-components=1 -C "${source_dir}"
   fi
 
-  pushd "${src_dir}" >/dev/null
-  {
-    ${NICE} cmake -S llvm -B "build" \
-      -Wno-dev -Wno-deprecated \
-      -DCMAKE_INSTALL_PREFIX="${INSTALL_DIR}" \
-      -DCMAKE_BUILD_TYPE="MinSizeRel" \
-      -DCMAKE_COLOR_MAKEFILE="OFF" \
-      -DCMAKE_VERBOSE_MAKEFILE="OFF" \
-      -DLLVM_ENABLE_PROJECTS="clang;clang-tools-extra;flang;lld;lldb;openmp" \
-      -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind;compiler-rt" \
-      -DLLVM_TARGETS_TO_BUILD="X86;AArch64;ARM" \
-      -DLLVM_STATIC_LINK_CXX_STDLIB="ON" \
-      \
-      -DLLVM_INSTALL_TOOLCHAIN_ONLY="ON" \
-      \
-      -DLLVM_BUILD_TOOLS="ON" \
-      -DLLVM_INCLUDE_TOOLS="ON" \
-      -DLLVM_INSTALL_TOOLS="ON" \
-      -DLLVM_TOOLS_INSTALL_DIR="bin" \
-      \
-      -DCLANG_BUILD_TOOLS="ON" \
-      -DCLANG_INCLUDE_TOOLS="ON" \
-      -DCLANG_INSTALL_TOOLS="ON" \
-      -DCLANG_OPENMP_RUNTIME="libomp" \
-      -DCLANG_PLUGIN_SUPPORT="ON" \
-      \
-      -DLLVM_BUILD_RUNTIME="ON" \
-      -DLLVM_ENABLE_FFI="ON" \
-      -DLLVM_ENABLE_RTTI="ON" \
-      -DLLVM_ENABLE_THREADS="ON" \
-      -DLLVM_ENABLE_ZLIB="ON" \
-      -DLLVM_ENABLE_ZSTD="ON" \
-      -DLLVM_USE_PERF="ON" \
-      \
-      -DLLVM_BINUTILS_INCDIR="/usr/include" \
-      \
-      -DLLVM_ENABLE_BINDINGS="OFF" \
-      -DLLVM_INCLUDE_BENCHMARKS="OFF" \
-      -DLLVM_INCLUDE_DOCS="OFF" \
-      -DLLVM_INCLUDE_EXAMPLES="OFF" \
-      -DLLVM_INCLUDE_TESTS="OFF" \
-      -DLLVM_INCLUDE_UTILS="OFF" \
-      -DLLVM_INSTALL_BENCHMARKS="OFF" \
-      -DLLVM_INSTALL_DOCS="OFF" \
-      -DLLVM_INSTALL_EXAMPLES="OFF" \
-      -DLLVM_INSTALL_TESTS="OFF" \
-      -DLLVM_INSTALL_UTILS="OFF" \
-      2>&1 | log "build.log"
+  export CFLAGS="-fPIC -g0 -Os ${CFLAGS:-}"
+  export CXXFLAGS="-fPIC -g0 -Os ${CXXFLAGS:-}"
+  export LDFLAGS="-static-libgcc -static-libstdc++ -s ${LDFLAGS:-}"
+  export CCACHE_DIR="/cache/ccache"
+  export CCACHE_NOCOMPRESS="1"
+  export CCACHE_MAXSIZE="50G"
 
-    ${NICE} cmake --build "build" --parallel="${JOBS}" 2>&1 | log "build.log"
+  cmake -G Ninja -S "${source_dir}/llvm" -B "${source_dir}/build" \
+    -DCMAKE_INSTALL_PREFIX="${install_dir}" \
+    -DCMAKE_BUILD_TYPE=MinSizeRel \
+    -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+    -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+    -DLLVM_PARALLEL_LINK_JOBS="${link_jobs}" \
+    -DLLVM_ENABLE_PROJECTS='clang;clang-tools-extra;flang;lld;lldb' \
+    -DLLVM_ENABLE_RUNTIMES='libcxx;libcxxabi;libunwind;compiler-rt;openmp;flang-rt' \
+    -DLLVM_TARGETS_TO_BUILD='X86;AArch64;ARM;WebAssembly' \
+    -DLLVM_STATIC_LINK_CXX_STDLIB=ON \
+    -DLLVM_INSTALL_TOOLCHAIN_ONLY=ON \
+    -DLLVM_BUILD_TOOLS=ON \
+    -DLLVM_INCLUDE_TOOLS=ON \
+    -DLLVM_INSTALL_TOOLS=ON \
+    -DLLVM_TOOLS_INSTALL_DIR=bin \
+    -DCLANG_BUILD_TOOLS=ON \
+    -DCLANG_INCLUDE_TOOLS=ON \
+    -DCLANG_INSTALL_TOOLS=ON \
+    -DCLANG_OPENMP_RUNTIME=libomp \
+    -DCLANG_PLUGIN_SUPPORT=ON \
+    -DLLVM_ENABLE_FFI=ON \
+    -DLLVM_ENABLE_RTTI=ON \
+    -DLLVM_ENABLE_THREADS=ON \
+    -DLLVM_ENABLE_ZLIB=FORCE_ON \
+    -DLLVM_ENABLE_ZSTD=FORCE_ON \
+    -DLLVM_USE_PERF=ON \
+    -DLLDB_ENABLE_PYTHON=OFF \
+    -DLLDB_ENABLE_CURSES=OFF \
+    -DLLDB_ENABLE_LIBEDIT=OFF \
+    -DLLVM_ENABLE_BINDINGS=OFF \
+    -DLLVM_INCLUDE_BENCHMARKS=OFF \
+    -DLLVM_INCLUDE_DOCS=OFF \
+    -DLLVM_INCLUDE_EXAMPLES=OFF \
+    -DLLVM_INCLUDE_TESTS=OFF \
+    -DLLVM_INCLUDE_UTILS=OFF \
+    2>&1 | tee "${source_dir}/configure.log"
+  cmake --build "${source_dir}/build" --parallel "${jobs}" 2>&1 | tee "${source_dir}/build.log"
+  cmake --install "${source_dir}/build" 2>&1 | tee "${source_dir}/install.log"
+  "${THIS_DIR}/test-toolchain" "${install_dir}" "${version}" 2>&1 | tee "${source_dir}/verify.log"
 
-    ${NICE} cmake --install "build" 2>&1 | log "build.log"
-
-    ${ROOT_DIR}/scripts/is-static-binary "${INSTALL_DIR}"/bin/clang || true
-
-    readelf -d "${INSTALL_DIR}"/bin/clang || true
-
-    "${INSTALL_DIR}"/bin/clang -v || true
-
-    package_all "${INSTALL_DIR}" "${outdir}/llvm-${VERSION}-${build_time}"
-  }
+  local basename="llvm-${version}-${build_time}"
+  tar --posix -cf - -C "${install_dir}" . | xz -T "${jobs}" -4 >"${output_dir}/${basename}.tar.xz"
+  tar --posix -cf - -C "${install_dir}" . | pigz -p "${jobs}" -7 >"${output_dir}/${basename}.tar.gz"
+  tar --posix -cf - -C "${install_dir}" . | zstd -T"${jobs}" -9 >"${output_dir}/${basename}.tar.zst"
+  pushd "${output_dir}" >/dev/null
+  sha256sum -- "${basename}.tar.xz" "${basename}.tar.gz" "${basename}.tar.zst" >SHA256SUMS
+  sha256sum --check SHA256SUMS
   popd >/dev/null
+  printf 'Verified artifacts: %s\n' "${output_dir}"
 }
-popd >/dev/null
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi

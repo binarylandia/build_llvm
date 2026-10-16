@@ -1,121 +1,86 @@
 #!/usr/bin/env bash
-
+#
+# Usage: scripts/test-toolchain INSTALL_DIR LLVM_VERSION
+# Check installed compilers, native runtimes, and WebAssembly linking.
 set -euo pipefail
+trap "exit" INT
 
-cat > input_lib.h << 'EOF'
-const char* get_input_string();
-void verify_string(const char* original, const char* decompressed);
+main() {
+  local install_dir="${1:?Missing installation directory}"
+  local version="${2:?Missing LLVM version}"
+  local test_dir
+  test_dir="$(mktemp -d "${PWD}/.build/llvm-smoke.XXXXXX")"
+  trap 'rm -rf -- "${test_dir}"' EXIT
+  export PATH="${install_dir}/bin:${PATH}"
+  clang --version | tee "${test_dir}/version.txt"
+  grep -F -- "clang version ${version}" "${test_dir}/version.txt"
+  clang --print-targets
+  ld.lld --version
+  lldb --version
+  flang --version
+
+  cat >"${test_dir}/main.c" <<'EOF'
+int main(void) { return 0; }
 EOF
+  clang -static "${test_dir}/main.c" -o "${test_dir}/native-c"
+  "${test_dir}/native-c"
 
-cat > input_lib.c << 'EOF'
-#include <stdio.h>
-#include <string.h>
-
-const char* get_input_string() {
-    return "Hello, world!";
-}
-
-void verify_string(const char* original, const char* decompressed) {
-    if (strcmp(original, decompressed) == 0) {
-        printf("Verification successful: \"%s\"\n", decompressed);
-    } else {
-        printf("Verification failed.\n");
-    }
-}
-EOF
-
-cat > test.c << 'EOF'
-#include <stdio.h>
-#include <string.h>
-#include <assert.h>
-#include <zlib.h>
-#include "input_lib.h"
-
-#define BUFFER_SIZE 1024
-
-void compress_decompress(const char* input) {
-  uLong src_len = strlen(input) + 1; // Including null terminator
-  uLong comp_len = compressBound(src_len);
-  uLong decomp_len = src_len;
-
-  unsigned char comp_buf[BUFFER_SIZE];
-  unsigned char decomp_buf[BUFFER_SIZE];
-
-  // Compress the input
-  int comp_res = compress(comp_buf, &comp_len, (const unsigned char*)input, src_len);
-  assert(comp_res == Z_OK);
-
-  // Decompress the input
-  int decomp_res = uncompress(decomp_buf, &decomp_len, comp_buf, comp_len);
-  assert(decomp_res == Z_OK);
-
-  // Output results
-  printf("Original: %s\nCompressed: %lu bytes\nDecompressed: %s\n", input, comp_len, decomp_buf);
-  verify_string(input, (char*)decomp_buf);
-}
-
+  cat >"${test_dir}/main.cpp" <<'EOF'
+#include <stdexcept>
+#include <vector>
 int main() {
-  const char* test_string = get_input_string();
-  compress_decompress(test_string);
-  return 0;
+  try { throw std::runtime_error("expected"); }
+  catch (const std::exception&) { return std::vector<int>{42}.at(0) != 42; }
 }
 EOF
+  clang++ -static "${test_dir}/main.cpp" -o "${test_dir}/native-cxx"
+  "${test_dir}/native-cxx"
+  clang++ -stdlib=libc++ -static "${test_dir}/main.cpp" -o "${test_dir}/native-libcxx"
+  "${test_dir}/native-libcxx"
 
-# Create Makefile
-cat > Makefile << 'EOF'
-CC ?= gcc
-LD ?= ld
-CFLAGS ?= -Wall -Wextra -O2
-CFLAGS += $(shell pkg-config --cflags zlib)
-LDFLAGS ?= -L. -linput $(shell pkg-config --libs zlib)
-
-TARGET = test_program
-LIB = libinput.a
-SRC = test.c
-LIB_SRC = input_lib.c
-OBJ = $(SRC:.c=.o)
-LIB_OBJ = $(LIB_SRC:.c=.o)
-
-.PHONY: all clean run
-
-all: $(TARGET)
-
-$(LIB): $(LIB_OBJ)
-	ar rcs $@ $^
-
-$(TARGET): $(OBJ) $(LIB)
-	$(CC) -o $@ $^ $(LDFLAGS)
-
-%.o: %.c
-	$(CC) $(CFLAGS) -c $< -o $@
-
-clean:
-	rm -f $(TARGET) $(OBJ) $(LIB) $(LIB_OBJ)
-
-run: $(TARGET)
-	./$(TARGET)
-
+  cat >"${test_dir}/main.f90" <<'EOF'
+program smoke
+  implicit none
+  real :: values(2) = [1.0, 2.0]
+  if (sum(values) /= 3.0) stop 1
+end program
 EOF
+  flang "${test_dir}/main.f90" -o "${test_dir}/native-fortran"
+  "${test_dir}/native-fortran"
 
-make
+  cat >"${test_dir}/openmp.c" <<'EOF'
+#include <omp.h>
+int main(void) {
+  int count = 0;
+  #pragma omp parallel reduction(+:count) num_threads(2)
+  count += 1;
+  return count != 2;
+}
+EOF
+  clang -fopenmp "${test_dir}/openmp.c" -Wl,-rpath,"${install_dir}/lib" -o "${test_dir}/native-openmp"
+  "${test_dir}/native-openmp"
 
-output=$(./test_program)
-status=$?
+  cat >"${test_dir}/wasm.c" <<'EOF'
+int add(int a, int b) { return a + b; }
+EOF
+  local target
+  for target in wasm32 wasm64; do
+    clang --target="${target}-unknown-unknown" -O2 -c "${test_dir}/wasm.c" -o "${test_dir}/${target}.o"
+    llvm-ar rcs "${test_dir}/${target}.a" "${test_dir}/${target}.o"
+    local memory64=()
+    if [[ "${target}" == wasm64 ]]; then
+      memory64=(-mwasm64)
+    fi
+    wasm-ld "${memory64[@]}" --no-entry --export=add "${test_dir}/${target}.a" -o "${test_dir}/${target}.wasm"
+    local magic
+    magic="$(od -An -tx1 -N8 "${test_dir}/${target}.wasm")"
+    [[ "${magic}" == ' 00 61 73 6d 01 00 00 00' ]]
+  done
+  printf 'Native compiler/runtime and wasm32/wasm64 smoke checks passed\n'
+  rm -rf -- "${test_dir}"
+  trap - EXIT
+}
 
-expected_output="Original: Hello, world!
-Compressed: 22 bytes
-Decompressed: Hello, world!
-Verification successful: \"Hello, world!\""
-
-if [[ $status -ne 0 ]]; then
-    echo "Test failed: Unexpected error with exit status $status" >&2
-    exit 1
-elif [[ "$output" != "$expected_output" ]]; then
-    echo "Test failed: Output does not match expected" >&2
-    printf "%q\n" "Expected: $expected_output" >&2
-    printf "%q\n" "Received: $output" >&2
-    exit 1
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
 fi
-
-make -s clean
-rm -f Makefile test.c input_lib.h input_lib.c

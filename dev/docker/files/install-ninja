@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+#
+# Install the verified upstream Ninja build tool.
+set -euo pipefail
+
+curl --fail --location --retry 3 --output /tmp/ninja-linux.zip \
+  'https://github.com/ninja-build/ninja/releases/download/v1.13.2/ninja-linux.zip'
+printf '%s\n' '5749cbc4e668273514150a80e387a957f933c6ed3f5f11e03fb30955e2bbead6  /tmp/ninja-linux.zip' | sha256sum --check
+unzip -o /tmp/ninja-linux.zip -d /usr/local/bin
+rm -- /tmp/ninja-linux.zip
+ninja --version
