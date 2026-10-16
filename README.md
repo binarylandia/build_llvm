@@ -25,6 +25,12 @@ Compile parallelism defaults to 6 jobs, with one link job. For example:
 
 LLDB is built without Python, curses, and libedit integration to avoid their host runtime dependencies.
 
+For native static C++ programs with the LLVM runtimes, use:
+
+```bash
+clang++ -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind -static -pthread program.cpp
+```
+
 ## Components
 
 - Clang and clang-tools-extra

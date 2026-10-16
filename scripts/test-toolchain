@@ -63,7 +63,8 @@ int main() {
 EOF
   clang++ -static "${test_dir}/main.cpp" -o "${test_dir}/native-cxx"
   "${test_dir}/native-cxx"
-  clang++ -stdlib=libc++ -static "${test_dir}/main.cpp" -o "${test_dir}/native-libcxx"
+  clang++ -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind -static -pthread \
+    "${test_dir}/main.cpp" -o "${test_dir}/native-libcxx"
   "${test_dir}/native-libcxx"
 
   cat >"${test_dir}/main.f90" <<'EOF'
