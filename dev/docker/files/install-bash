@@ -6,7 +6,7 @@ set -euo pipefail
 build_dir="$(mktemp -d /tmp/bash.XXXXXX)"
 trap 'rm -rf -- "${build_dir}"' EXIT
 pushd "${build_dir}" >/dev/null
-while read -r checksum filename; do
+while read -r _ filename; do
   if [[ "${filename}" == bash-5.3.tar.gz ]]; then
     url="https://ftp.gnu.org/gnu/bash/${filename}"
   else
