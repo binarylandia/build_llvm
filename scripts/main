@@ -86,6 +86,7 @@ main() {
     -DLIBCXX_ENABLE_ABI_LINKER_SCRIPT=OFF \
     -DLIBCXXABI_STATICALLY_LINK_UNWINDER_IN_STATIC_LIBRARY=ON \
     -DLIBCXXABI_STATICALLY_LINK_UNWINDER_IN_SHARED_LIBRARY=ON \
+    -DLIBOMP_ENABLE_SHARED=OFF \
     -DLLVM_USE_PERF=ON \
     -DLLDB_ENABLE_PYTHON=OFF \
     -DLLDB_ENABLE_CURSES=OFF \
@@ -98,6 +99,8 @@ main() {
     -DLLVM_INCLUDE_UTILS=OFF \
     2>&1 | tee "${source_dir}/configure.log"
   cmake --build "${source_dir}/build" --parallel "${jobs}" 2>&1 | tee "${source_dir}/build.log"
+  rm -rf -- "${install_dir}"
+  mkdir -p "${install_dir}"
   cmake --install "${source_dir}/build" 2>&1 | tee "${source_dir}/install.log"
   "${THIS_DIR}/test-toolchain" "${install_dir}" "${version}" 2>&1 | tee "${source_dir}/verify.log"
 

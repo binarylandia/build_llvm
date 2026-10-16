@@ -37,7 +37,7 @@ clang++ -fuse-ld=lld -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind -s
 - LLD linker
 - LLDB debugger
 - Flang Fortran compiler
-- OpenMP runtime (libomp)
+- Static OpenMP runtime (libomp)
 - compiler-rt, libc++, libc++abi, libunwind
 
 ## Features
