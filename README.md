@@ -28,7 +28,7 @@ LLDB is built without Python, curses, and libedit integration to avoid their hos
 For native static C++ programs with the LLVM runtimes, use:
 
 ```bash
-clang++ -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind -static -pthread program.cpp
+clang++ -fuse-ld=lld -stdlib=libc++ --rtlib=compiler-rt --unwindlib=libunwind -static -pthread program.cpp -ldl
 ```
 
 ## Components
