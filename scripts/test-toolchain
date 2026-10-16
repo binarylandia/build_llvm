@@ -86,7 +86,7 @@ int main(void) {
   return count != 2;
 }
 EOF
-  clang -fuse-ld=lld -fopenmp -static -pthread "${test_dir}/openmp.c" -ldl -o "${test_dir}/native-openmp"
+  clang -fuse-ld=lld -fopenmp -static-libgcc -pthread "${test_dir}/openmp.c" -ldl -o "${test_dir}/native-openmp"
   "${test_dir}/native-openmp"
 
   cat >"${test_dir}/wasm.c" <<'EOF'
