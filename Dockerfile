@@ -74,6 +74,10 @@ RUN /install-libffi "${HOST_TUPLE}" "${PREFIX_HOST}"
 COPY --link "dev/docker/files/install-libxml" "/"
 RUN /install-libxml "${HOST_TUPLE}" "${PREFIX_HOST}"
 
+RUN yum install -y glibc-static >/dev/null \
+&& yum clean all >/dev/null \
+&& rm -rf /var/cache/yum
+
 ARG USER=user
 ARG GROUP=user
 ARG UID

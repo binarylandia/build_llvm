@@ -57,7 +57,9 @@ int main(void) {
   return count != 2;
 }
 EOF
-  clang -fopenmp "${test_dir}/openmp.c" -Wl,-rpath,"${install_dir}/lib" -o "${test_dir}/native-openmp"
+  local runtime_dir
+  runtime_dir="$(clang --print-runtime-dir)"
+  clang -fopenmp "${test_dir}/openmp.c" -Wl,-rpath,"${runtime_dir}" -o "${test_dir}/native-openmp"
   "${test_dir}/native-openmp"
 
   cat >"${test_dir}/wasm.c" <<'EOF'

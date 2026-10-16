@@ -54,6 +54,8 @@ main() {
     -DLLVM_ENABLE_RUNTIMES='libcxx;libcxxabi;libunwind;compiler-rt;openmp;flang-rt' \
     -DLLVM_TARGETS_TO_BUILD='X86;AArch64;ARM;WebAssembly' \
     -DLLVM_STATIC_LINK_CXX_STDLIB=ON \
+    -DLLVM_FORCE_VC_REPOSITORY=https://github.com/llvm/llvm-project \
+    -DLLVM_FORCE_VC_REVISION="llvmorg-${version}" \
     -DLLVM_INSTALL_TOOLCHAIN_ONLY=ON \
     -DLLVM_BUILD_TOOLS=ON \
     -DLLVM_INCLUDE_TOOLS=ON \
