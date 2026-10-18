@@ -61,6 +61,20 @@ function build_winpthreads() {
   done
 }
 
+# Point the config file of every MinGW target at its sysroot. Clang finds the
+# sysroot <prefix>/<triple>/ next to its bin/ folder without the setting, but
+# then also searches <prefix>/include/c++/v1, which holds the libc++ headers of
+# the native runtimes of the LLVM installation: their math.h hides the math.h
+# of mingw-w64 from the MinGW libc++ headers. With the sysroot set, clang
+# searches only the sysroot and the clang resource folder.
+function set_sysroots() {
+  local install_dir="${1}"
+  local arch
+  for arch in "${MINGW_ARCHS[@]}"; do
+    printf -- '--sysroot=<CFGDIR>/../%s-w64-mingw32\n' "${arch}" >>"${install_dir}/bin/${arch}-w64-windows-gnu.cfg"
+  done
+}
+
 main() {
   local install_dir="${1:?Missing installation directory}"
   local llvm_source_dir="${2:?Missing LLVM source directory}"
@@ -85,6 +99,7 @@ main() {
 
   pushd "${scripts_dir}" >/dev/null
   ./install-wrappers.sh "${install_dir}"
+  set_sysroots "${install_dir}"
   ./build-mingw-w64-tools.sh "${install_dir}"
   ./build-mingw-w64.sh \
     --with-default-msvcrt="${MINGW_CRT}" \
