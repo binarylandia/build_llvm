@@ -15,7 +15,7 @@ Run one version per invocation:
 ./build './scripts/main 23.1.1'
 ```
 
-Source checksums are pinned in `scripts/sources.sha256`. Each version has a separate build and installation directory. Builds run native C/C++, libc++, Fortran, and OpenMP checks, then compile and link wasm32 and wasm64 modules before packaging. Artifacts and `SHA256SUMS` are written to `.out/llvm-<version>-<timestamp>/`.
+Source checksums are pinned in `scripts/sources.sha256`. Each version has a separate build and installation directory. Builds run native C/C++, libc++, Fortran, and OpenMP checks, compile and link wasm32 and wasm64 modules, and check the Darwin tools before packaging. Archives, `SHA256SUMS`, and one metadata file are written to `.out/llvm-<version>-<build time>/`.
 
 Compile parallelism defaults to 6 jobs, with one link job. For example:
 
@@ -24,6 +24,19 @@ Compile parallelism defaults to 6 jobs, with one link job. For example:
 ```
 
 LLDB is built without Python, curses, and libedit integration to avoid their host runtime dependencies.
+
+## Release
+
+```bash
+# Check, then publish .out/llvm-<version>-<build time>/ as release llvm-<version>-<build time>
+./scripts/release --dry-run <build time>
+./scripts/release <build time>
+```
+
+- The base image is pinned by digest in `build`, and the LLVM source by checksum
+- Archives list their files in sorted order with one owner and the commit time, so the same files give the same archive
+- `scripts/release` publishes only a build of a clean, pushed commit, and never changes a published release
+- Each release has `SHA256SUMS` and `manifest.json`, which records the LLVM version, source tarball and checksum, projects, runtimes, targets, Darwin tools, base image, and build commit
 
 For native static C++ programs with the LLVM runtimes, use:
 
@@ -36,7 +49,8 @@ OpenMP programs link libomp statically and use the system glibc.
 ## Components
 
 - Clang and clang-tools-extra
-- LLD linker
+- LLD linker, including `ld64.lld` for Mach-O
+- Darwin tools that the osxcross `llvm` flavor runs in place of cctools: `dsymutil`, `llvm-lipo`, `llvm-otool`, `llvm-install-name-tool`, `llvm-libtool-darwin`, `llvm-readtapi`, `llvm-bitcode-strip`, `llvm-dwarfdump`, and others
 - LLDB debugger
 - Flang Fortran compiler
 - Static OpenMP runtime (libomp)
