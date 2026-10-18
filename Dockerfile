@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 # check=experimental=all
-FROM quay.io/pypa/manylinux2014_x86_64@sha256:f6a6f153c9cf45470507ebbc27013e5db14ce21331b62fd2c540561f25e5f0a5
+ARG DOCKER_BASE_IMAGE
+FROM ${DOCKER_BASE_IMAGE}
 
 SHELL ["bash", "-euxo", "pipefail", "-c"]
 
@@ -27,6 +28,7 @@ RUN set -euxo pipefail >/dev/null \
   curl \
   git \
   gzip \
+  jq \
   parallel \
   pigz \
   sudo \
