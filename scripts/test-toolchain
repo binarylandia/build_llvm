@@ -50,9 +50,9 @@ check_mingw_tools() {
 main() {
   local install_dir="${1:?Missing installation directory}"
   local version="${2:?Missing LLVM version}"
-  local test_dir
-  test_dir="$(mktemp -d "${PWD}/.build/llvm-smoke.XXXXXX")"
-  trap 'rm -rf -- "${test_dir}"' EXIT
+  TEST_DIR="$(mktemp -d "${PWD}/.build/llvm-smoke.XXXXXX")"
+  trap 'rm -rf -- "${TEST_DIR}"' EXIT
+  local test_dir="${TEST_DIR}"
   export PATH="${install_dir}/bin:${PATH}"
   clang --version | tee "${test_dir}/version.txt"
   grep -F -- "clang version ${version}" "${test_dir}/version.txt"

@@ -172,9 +172,9 @@ function run_wine() {
 
 main() {
   local install_dir="${1:?Missing installation directory}"
-  local test_dir
-  test_dir="$(mktemp -d "${PWD}/.build/mingw-smoke.XXXXXX")"
-  trap 'rm -rf -- "${test_dir}"' EXIT
+  TEST_DIR="$(mktemp -d "${PWD}/.build/mingw-smoke.XXXXXX")"
+  trap 'rm -rf -- "${TEST_DIR}"' EXIT
+  local test_dir="${TEST_DIR}"
   export PATH="${install_dir}/bin:${PATH}"
   write_sources "${test_dir}"
 
