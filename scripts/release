@@ -11,9 +11,11 @@
 #     example llvm-22.1.8-2026-10-18_09-00-00
 #   - points at the commit that built LLVM, which must be clean and pushed to
 #     origin
-#   - carries the archives, SHA256SUMS, and manifest.json with the metadata of
-#     the build (LLVM version, source tarball and checksum, projects, runtimes,
-#     targets, Darwin tools, base image digest, build commit)
+#   - carries the LLVM archives, the llvm-mingw archives with the MinGW
+#     runtimes, SHA256SUMS, and manifest.json with the metadata of the build
+#     (LLVM version, source tarball and checksum, projects, runtimes, targets,
+#     Darwin tools, MinGW triples, mingw-w64 version and CRT, llvm-mingw commit,
+#     base image digest, build commit)
 #
 # A published release is never changed: the script stops when the release
 # exists. A fixed build goes into a new release.
@@ -104,7 +106,8 @@ function write_notes() {
         "- Projects: \(.projects | code)",
         "- Runtimes: \(.runtimes | code)",
         "- Targets: \(.targets | code)",
-        "- Darwin tools for osxcross: \(.darwin_tools | code)"),
+        "- Darwin tools for osxcross: \(.darwin_tools | code)",
+        "- MinGW runtimes for \(.mingw.triples | code) in `\(.mingw.files[0] | rtrimstr(".tar.xz")).tar.*`, which unpacks into the prefix of the LLVM archive: mingw-w64 \(.mingw.mingw_w64.version) (`\(.mingw.mingw_w64.source.name)`, sha256 `\(.mingw.mingw_w64.source.sha256)`) with the \(.mingw.crt | ascii_upcase) C runtime, built with the scripts of llvm-mingw \(.mingw.llvm_mingw.tag) (commit \(.mingw.llvm_mingw.commit)). The runtimes are static libraries, so programs import only Windows system DLLs: \(.mingw.runtimes | code)"),
       "\n`SHA256SUMS` lists the checksums of the archives, and `manifest.json` the metadata of the build."
     ' "${manifest}"
   } >"${notes}"

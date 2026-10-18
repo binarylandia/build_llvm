@@ -85,6 +85,11 @@ RUN yum install -y glibc-static >/dev/null \
 && yum clean all >/dev/null \
 && rm -rf /var/cache/yum
 
+# 64-bit Wine runs the x86_64 Windows test programs of scripts/test-mingw.
+RUN yum install -y wine-core >/dev/null \
+&& yum clean all >/dev/null \
+&& rm -rf /var/cache/yum
+
 ARG USER=user
 ARG GROUP=user
 ARG UID

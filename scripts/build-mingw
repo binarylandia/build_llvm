@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+#
+# Usage: scripts/build-mingw INSTALL_DIR LLVM_SOURCE_DIR WORK_DIR LLVM_MINGW_ARCHIVE MINGW_W64_ARCHIVE JOBS
+# Build the MinGW-w64 runtimes into the LLVM installation in INSTALL_DIR, in the
+# layout of llvm-mingw (scripts/mingw.sh). The llvm-mingw scripts of
+# LLVM_MINGW_ARCHIVE run unmodified from WORK_DIR, with the LLVM source of the
+# build as their llvm-project folder and the mingw-w64 release of
+# MINGW_W64_ARCHIVE as their mingw-w64 folder.
+set -euo pipefail
+trap "exit" INT
+
+THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+
+# shellcheck source=scripts/mingw.sh
+source "${THIS_DIR}/mingw.sh"
+
+# Extract an archive into a folder, unless the folder holds that archive
+# already.
+function extract_once() {
+  local archive="${1}"
+  local dir="${2}"
+  local marker="${dir}/.extracted"
+  if [[ -f "${marker}" && "$(<"${marker}")" == "${archive##*/}" ]]; then
+    return
+  fi
+  rm -rf -- "${dir}"
+  mkdir -p "${dir}"
+  tar -xf "${archive}" --strip-components=1 -C "${dir}"
+  printf '%s\n' "${archive##*/}" >"${marker}"
+}
+
+# Build winpthreads as static libraries only, with the flags of
+# build-mingw-w64-libraries.sh of llvm-mingw. That script also builds
+# libwinpthread-1.dll, and lld takes the import library libwinpthread.dll.a
+# before libwinpthread.a, so every program that links -lpthread would need the
+# DLL.
+function build_winpthreads() {
+  local install_dir="${1}"
+  local source_dir="${2}"
+  local jobs="${3}"
+  local arch
+  for arch in "${MINGW_ARCHS[@]}"; do
+    local sysroot="${install_dir}/${arch}-w64-mingw32"
+    local build_dir="${source_dir}/build-${arch}"
+    rm -rf -- "${build_dir}"
+    mkdir -p "${build_dir}"
+    pushd "${build_dir}" >/dev/null
+    ../configure \
+      --host="${arch}-w64-mingw32" \
+      --prefix="${sysroot}" \
+      --libdir="${sysroot}/lib" \
+      --enable-silent-rules \
+      --enable-static \
+      --disable-shared \
+      CFLAGS="-g -O2 -mguard=cf" \
+      CXXFLAGS="-g -O2 -mguard=cf"
+    make -j"${jobs}"
+    make install
+    popd >/dev/null
+    install -D -m644 "${source_dir}/COPYING" "${sysroot}/share/mingw32/COPYING.winpthreads.txt"
+  done
+}
+
+main() {
+  local install_dir="${1:?Missing installation directory}"
+  local llvm_source_dir="${2:?Missing LLVM source directory}"
+  local work_dir="${3:?Missing work directory}"
+  local llvm_mingw_archive="${4:?Missing llvm-mingw archive}"
+  local mingw_w64_archive="${5:?Missing mingw-w64 archive}"
+  local jobs="${6:?Missing job count}"
+
+  local scripts_dir="${work_dir}/llvm-mingw"
+  extract_once "${llvm_mingw_archive}" "${scripts_dir}"
+  extract_once "${mingw_w64_archive}" "${scripts_dir}/mingw-w64"
+  ln -sfn -- "${llvm_source_dir}" "${scripts_dir}/llvm-project"
+
+  # The compiler flags of the LLVM build are for the host.
+  unset CFLAGS CXXFLAGS LDFLAGS
+  export TOOLCHAIN_ARCHS="${MINGW_ARCHS[*]}"
+  export TOOLCHAIN_TARGET_OSES="mingw32"
+  export CORES="${jobs}"
+  # Rebuild every runtime from scratch, because the build folders do not track
+  # changes of the installed compiler.
+  export CLEAN=1
+
+  pushd "${scripts_dir}" >/dev/null
+  ./install-wrappers.sh "${install_dir}"
+  ./build-mingw-w64-tools.sh "${install_dir}"
+  ./build-mingw-w64.sh \
+    --with-default-msvcrt="${MINGW_CRT}" \
+    --with-default-win32-winnt="${MINGW_WIN32_WINNT}" \
+    "${install_dir}"
+  ./build-compiler-rt.sh "${install_dir}"
+  ./build-libcxx.sh --disable-shared "${install_dir}"
+  popd >/dev/null
+
+  export PATH="${install_dir}/bin:${PATH}"
+  build_winpthreads "${install_dir}" "${scripts_dir}/mingw-w64/mingw-w64-libraries/winpthreads" "${jobs}"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi

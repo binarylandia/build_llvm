@@ -1,0 +1,231 @@
+#!/usr/bin/env bash
+#
+# Usage: scripts/test-mingw INSTALL_DIR
+# Check the MinGW runtimes of the LLVM installation. For every MinGW triple,
+# compile and link a C program, a C++ program that throws and catches an
+# exception, and programs that run threads with thread-local variables; check
+# that the programs import only Windows system DLLs; and run the x86_64
+# programs under Wine when Wine is installed.
+set -euo pipefail
+trap "exit" INT
+
+THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+
+# shellcheck source=scripts/mingw.sh
+source "${THIS_DIR}/mingw.sh"
+
+# The DLLs that a program may import, in lower case: libraries that are part of
+# Windows 10 and later, including the UCRT and its API sets. The DLLs of the
+# MinGW runtimes (libc++.dll, libunwind.dll, libwinpthread-1.dll) and the old
+# msvcrt.dll are not in the list.
+SYSTEM_DLL_PATTERN='^(api-ms-win-[a-z0-9-]+|advapi32|bcrypt|bcryptprimitives|comctl32|crypt32|dbghelp|gdi32|iphlpapi|kernel32|kernelbase|ncrypt|ntdll|ole32|oleaut32|psapi|secur32|shell32|shlwapi|synchronization|ucrtbase|user32|userenv|version|winmm|ws2_32)\.dll$'
+
+# The prefixed tools that every MinGW triple must have.
+PREFIXED_TOOLS=(
+  addr2line ar as c++ clang clang++ dlltool g++ gcc ld llvm-ar llvm-ranlib
+  nm objcopy objdump ranlib readelf size strings strip widl windres
+)
+
+function fail() {
+  printf 'ERROR: %s\n' "$*" >&2
+  return 1
+}
+
+# Write the test programs into a folder.
+function write_sources() {
+  local dir="${1}"
+  cat >"${dir}/hello.c" <<'EOF'
+#include <stdio.h>
+int main(void) {
+  printf("c: ok\n");
+  return 0;
+}
+EOF
+  cat >"${dir}/exception.cpp" <<'EOF'
+#include <cstdio>
+#include <stdexcept>
+#include <string>
+static void thrower(int value) {
+  if (value > 0) throw std::runtime_error("thrown " + std::to_string(value));
+}
+int main() {
+  try {
+    thrower(42);
+  } catch (const std::exception& error) {
+    if (std::string(error.what()) != "thrown 42") return 1;
+    std::printf("exception: ok\n");
+    return 0;
+  }
+  return 1;
+}
+EOF
+  cat >"${dir}/threads.cpp" <<'EOF'
+#include <cstdio>
+#include <thread>
+#include <vector>
+thread_local int counter = 0;
+int main() {
+  std::vector<int> results(4);
+  std::vector<std::thread> threads;
+  for (int i = 0; i < 4; ++i) {
+    threads.emplace_back([&results, i] {
+      for (int j = 0; j <= i; ++j) ++counter;
+      results[i] = counter;
+    });
+  }
+  for (auto& thread : threads) thread.join();
+  for (int i = 0; i < 4; ++i) {
+    if (results[i] != i + 1) return 1;
+  }
+  if (counter != 0) return 1;
+  std::printf("threads: ok\n");
+  return 0;
+}
+EOF
+  cat >"${dir}/pthread.c" <<'EOF'
+#include <pthread.h>
+#include <stdio.h>
+static _Thread_local int value = 1;
+static void *worker(void *result) {
+  value += 41;
+  *(int *)result = value;
+  return NULL;
+}
+int main(void) {
+  int result = 0;
+  pthread_t thread;
+  if (pthread_create(&thread, NULL, worker, &result) != 0) return 1;
+  if (pthread_join(thread, NULL) != 0) return 1;
+  if (result != 42 || value != 1) return 1;
+  printf("pthread: ok\n");
+  return 0;
+}
+EOF
+  cat >"${dir}/ucrt.c" <<'EOF'
+#include <corecrt.h>
+#if !defined(_UCRT)
+#error the default C runtime is not the UCRT
+#endif
+EOF
+}
+
+# Fail unless every prefixed tool of the triple exists and resolves.
+function check_tools() {
+  local install_dir="${1}"
+  local triple="${2}"
+  local tool
+  for tool in "${PREFIXED_TOOLS[@]}"; do
+    [[ -e "${install_dir}/bin/${triple}-${tool}" ]] || fail "missing or dangling ${install_dir}/bin/${triple}-${tool}"
+  done
+  local path
+  for path in "${install_dir}/bin/${triple}-"*; do
+    [[ -e "${path}" ]] || fail "dangling ${path}"
+  done
+}
+
+# Fail when the sysroot of the triple has a DLL or an import library of a
+# runtime, so that every program links the runtimes statically.
+function check_static_only() {
+  local install_dir="${1}"
+  local triple="${2}"
+  local shared
+  shared="$(find "${install_dir}/${triple}" \( -name '*.dll' -o -name '*.dll.a' \) -print)"
+  [[ -z "${shared}" ]] || fail "shared runtime files in the ${triple} sysroot:"$'\n'"${shared}"
+}
+
+# Fail unless the executable is a PE image for the machine and imports only
+# Windows system DLLs. Print the imports.
+function check_executable() {
+  local exe="${1}"
+  local machine="${2}"
+  local headers
+  headers="$(llvm-readobj --file-headers "${exe}")"
+  [[ "${headers}" == *"Machine: ${machine} "* ]] || fail "${exe} is not an ${machine} image:"$'\n'"${headers}"
+  local output
+  output="$(llvm-readobj --coff-imports "${exe}")"
+  local names
+  names="$(awk '$1 == "Name:" {print $2}' <<<"${output}")"
+  [[ -n "${names}" ]] || fail "${exe} imports no DLL"
+  local imports=()
+  mapfile -t imports <<<"${names}"
+  local dll
+  for dll in "${imports[@]}"; do
+    [[ "${dll,,}" =~ ${SYSTEM_DLL_PATTERN} ]] || fail "${exe} imports ${dll}, which is not a Windows system DLL"
+  done
+  printf '%s imports: %s\n' "${exe##*/}" "${imports[*]}"
+}
+
+# Run an executable under Wine and fail unless it succeeds and prints the
+# expected line.
+function run_wine() {
+  local wine="${1}"
+  local exe="${2}"
+  local expected="${3}"
+  local output
+  if ! output="$(WINEDEBUG=-all "${wine}" "${exe}" 2>&1)"; then
+    fail "${exe} failed under Wine:"$'\n'"${output}"
+  fi
+  output="${output//$'\r'/}"
+  [[ "${output}" == *"${expected}"* ]] || fail "${exe} printed under Wine:"$'\n'"${output}"
+  printf '%s under Wine: %s\n' "${exe##*/}" "${expected}"
+}
+
+main() {
+  local install_dir="${1:?Missing installation directory}"
+  local test_dir
+  test_dir="$(mktemp -d "${PWD}/.build/mingw-smoke.XXXXXX")"
+  trap 'rm -rf -- "${test_dir}"' EXIT
+  export PATH="${install_dir}/bin:${PATH}"
+  write_sources "${test_dir}"
+
+  local wine=""
+  wine="$(command -v wine64 || command -v wine || true)" # Wine is optional
+  if [[ -n "${wine}" ]]; then
+    export WINEPREFIX="${test_dir}/wine"
+    export WINEDLLOVERRIDES="mscoree,mshtml="
+  else
+    printf 'Wine is not installed: the x86_64 programs are not run\n'
+  fi
+
+  declare -A machines=([x86_64]="IMAGE_FILE_MACHINE_AMD64" [aarch64]="IMAGE_FILE_MACHINE_ARM64")
+  local arch
+  for arch in "${MINGW_ARCHS[@]}"; do
+    local triple="${arch}-w64-mingw32"
+    local out="${test_dir}/${arch}"
+    mkdir -p "${out}"
+    check_tools "${install_dir}" "${triple}"
+    check_static_only "${install_dir}" "${triple}"
+    "${triple}-clang" --version | tee "${out}/version.txt"
+    grep -F -- "Target: ${arch}-w64-windows-gnu" "${out}/version.txt"
+    "${triple}-clang" -fsyntax-only "${test_dir}/ucrt.c"
+
+    "${triple}-clang" -O2 "${test_dir}/hello.c" -o "${out}/hello.exe"
+    "${triple}-clang++" -O2 "${test_dir}/exception.cpp" -o "${out}/exception.exe"
+    "${triple}-clang++" -O2 "${test_dir}/threads.cpp" -o "${out}/threads.exe"
+    "${triple}-clang" -O2 -pthread "${test_dir}/pthread.c" -o "${out}/pthread.exe"
+    # The form of the Rust *-pc-windows-gnullvm targets: plain clang with a
+    # target, which loads <arch>-pc-windows-gnu.cfg, linking with -static.
+    clang++ --target="${arch}-pc-windows-gnu" -O2 -static "${test_dir}/exception.cpp" \
+      -o "${out}/exception-static.exe"
+
+    local exe
+    for exe in hello exception threads pthread exception-static; do
+      check_executable "${out}/${exe}.exe" "${machines[${arch}]}"
+    done
+
+    if [[ -n "${wine}" && "${arch}" == "x86_64" ]]; then
+      run_wine "${wine}" "${out}/hello.exe" "c: ok"
+      run_wine "${wine}" "${out}/exception.exe" "exception: ok"
+      run_wine "${wine}" "${out}/threads.exe" "threads: ok"
+      run_wine "${wine}" "${out}/pthread.exe" "pthread: ok"
+      run_wine "${wine}" "${out}/exception-static.exe" "exception: ok"
+    fi
+  done
+  printf 'MinGW checks passed for %s\n' "$(mingw_triples | paste -sd ' ' -)"
+  rm -rf -- "${test_dir}"
+  trap - EXIT
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi

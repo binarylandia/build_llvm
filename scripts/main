@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 #
 # Usage: scripts/main [LLVM_VERSION]
-# Build, verify, and package LLVM inside the builder container.
+# Build LLVM and the MinGW runtimes on top of it, verify them, and package them
+# inside the builder container: the LLVM archives hold the LLVM installation,
+# and the llvm-mingw archives hold the MinGW runtimes, which unpack into the
+# same prefix (scripts/build-mingw).
 # JOBS controls compile parallelism; LINK_JOBS controls link parallelism.
 # ./build sets BUILD_TIME, SOURCE_DATE_EPOCH, and the provenance that the
 # metadata records (DOCKER_BASE_IMAGE, BUILD_COMMIT, BUILD_DIRTY).
@@ -13,6 +16,8 @@ ROOT_DIR="$(dirname "${THIS_DIR}")"
 
 # shellcheck source=scripts/llvm-tools.sh
 source "${THIS_DIR}/llvm-tools.sh"
+# shellcheck source=scripts/mingw.sh
+source "${THIS_DIR}/mingw.sh"
 
 PROJECTS=(clang clang-tools-extra flang lld lldb)
 RUNTIMES=(libcxx libcxxabi libunwind compiler-rt openmp flang-rt)
@@ -24,15 +29,63 @@ function cmake_list() {
   printf '%s' "$*"
 }
 
-# Write the files of a directory as a tar stream to stdout. The entries are
-# sorted, owned by root, and carry the time SOURCE_DATE_EPOCH, so the same files
-# always give the same archive. Each path is listed once; tar does not recurse.
-function tar_dir() {
+# Print the checksum of a source archive from scripts/sources.sha256.
+function source_checksum() {
+  local name="${1}"
+  local checksum
+  checksum="$(awk -v name="${name}" '$2 == name {print $1}' "${THIS_DIR}/sources.sha256")"
+  if [[ ! "${checksum}" =~ ^[a-f0-9]{64}$ ]]; then
+    printf 'No verified source checksum for %s\n' "${name}" >&2
+    return 1
+  fi
+  printf '%s\n' "${checksum}"
+}
+
+# Download a source archive into tarballs/ unless it is there, and fail unless
+# it matches its checksum in scripts/sources.sha256.
+function fetch_source() {
+  local name="${1}"
+  local url="${2}"
+  local archive="${ROOT_DIR}/tarballs/${name}"
+  local checksum
+  checksum="$(source_checksum "${name}")"
+  mkdir -p "${ROOT_DIR}/tarballs"
+  if [[ ! -f "${archive}" ]]; then
+    curl --fail --location --retry 3 --output "${archive}.part" "${url}"
+    mv -- "${archive}.part" "${archive}"
+  fi
+  printf '%s  %s\n' "${checksum}" "${archive}" | sha256sum --check
+}
+
+# Print one line per entry of a directory: the path, type, mode, and link
+# target, and for a regular file also its sha256. The lines are sorted, so the
+# manifests of two states of a directory compare with comm.
+function tree_manifest() {
+  local dir="${1}"
+  pushd "${dir}" >/dev/null
+  {
+    find . -mindepth 1 -printf 'entry\t%P\t%y\t%m\t%l\n'
+    find . -type f -exec sha256sum -- {} + | sed 's/^/sha256\t/'
+  } | LC_ALL=C sort
+  popd >/dev/null
+}
+
+# Print the sorted paths of a manifest.
+function manifest_paths() {
+  local manifest="${1}"
+  awk -F '\t' '$1 == "entry" {print $2}' "${manifest}" | LC_ALL=C sort
+}
+
+# Write the listed entries of a directory as a tar stream to stdout. The entries
+# are sorted, owned by root, and carry the time SOURCE_DATE_EPOCH, so the same
+# files always give the same archive. Each path is listed once; tar does not
+# recurse.
+function tar_paths() {
   local input_dir="${1}"
-  find "${input_dir}" -mindepth 1 -printf '%P\n' | LC_ALL=C sort |
-    tar --posix --no-recursion --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
-      --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime \
-      -cf - -C "${input_dir}" --files-from=-
+  local paths_file="${2}"
+  tar --posix --no-recursion --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
+    --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime \
+    -cf - -C "${input_dir}" --files-from="${paths_file}"
 }
 
 # The compressors give the same output for the same input with any number of
@@ -40,39 +93,51 @@ function tar_dir() {
 # and zstd always. pigz 2.3 stores the time unless -T is given.
 function package_xz() {
   local input_dir="${1}"
-  local output_basename="${2}"
-  tar_dir "${input_dir}" | xz -T "$(($(nproc) > 1 ? $(nproc) : 2))" -5 >"${output_basename}.tar.xz"
+  local paths_file="${2}"
+  local output_basename="${3}"
+  tar_paths "${input_dir}" "${paths_file}" | xz -T "$(($(nproc) > 1 ? $(nproc) : 2))" -5 >"${output_basename}.tar.xz"
 }
 
 function package_gz() {
   local input_dir="${1}"
-  local output_basename="${2}"
-  tar_dir "${input_dir}" | pigz -n -T -p "$(nproc)" -7 >"${output_basename}.tar.gz"
+  local paths_file="${2}"
+  local output_basename="${3}"
+  tar_paths "${input_dir}" "${paths_file}" | pigz -n -T -p "$(nproc)" -7 >"${output_basename}.tar.gz"
 }
 
 function package_zst() {
   local input_dir="${1}"
-  local output_basename="${2}"
-  tar_dir "${input_dir}" | zstd -q -T"$(nproc)" -7 >"${output_basename}.tar.zst"
+  local paths_file="${2}"
+  local output_basename="${3}"
+  tar_paths "${input_dir}" "${paths_file}" | zstd -q -T"$(nproc)" -7 >"${output_basename}.tar.zst"
 }
 
 function package_all() {
   local input_dir="${1}"
-  local output_basename="${2}"
-  package_xz "${input_dir}" "${output_basename}"
-  package_gz "${input_dir}" "${output_basename}"
-  package_zst "${input_dir}" "${output_basename}"
+  local paths_file="${2}"
+  local output_basename="${3}"
+  package_xz "${input_dir}" "${paths_file}" "${output_basename}"
+  package_gz "${input_dir}" "${paths_file}" "${output_basename}"
+  package_zst "${input_dir}" "${paths_file}" "${output_basename}"
+}
+
+# Print the archive names of a basename as a JSON array.
+function archive_names() {
+  local basename="${1}"
+  jq -nc --arg name "${basename}" '[($name + ".tar.xz"), ($name + ".tar.gz"), ($name + ".tar.zst")]'
 }
 
 # Write <archive basename>.json with the facts of the build that scripts/release
-# puts into the manifest of a release.
+# puts into the manifest of a release. files lists the archives of the build:
+# the LLVM archives and the llvm-mingw archives.
 function write_metadata() {
   local output_basename="${1}"
-  local version="${2}"
-  local source_name="${3}"
-  local source_sha256="${4}"
-  local install_dir="${5}"
-  local build_time="${6}"
+  local mingw_basename="${2}"
+  local version="${3}"
+  local source_name="${4}"
+  local source_sha256="${5}"
+  local install_dir="${6}"
+  local build_time="${7}"
   local name="${output_basename##*/}"
   local installed=()
   local tool
@@ -94,11 +159,30 @@ function write_metadata() {
     --arg build_commit "${BUILD_COMMIT:?}" \
     --argjson build_dirty "${BUILD_DIRTY:?}" \
     --arg build_time "${build_time}" \
+    --argjson llvm_files "$(archive_names "${name}")" \
+    --argjson mingw_files "$(archive_names "${mingw_basename}")" \
+    --arg mingw_triples "$(mingw_triples | paste -sd ';' -)" \
+    --arg mingw_runtimes "$(cmake_list "${MINGW_RUNTIMES[@]}")" \
+    --arg mingw_crt "${MINGW_CRT}" \
+    --arg mingw_win32_winnt "${MINGW_WIN32_WINNT}" \
+    --arg mingw_w64_version "${MINGW_W64_VERSION}" \
+    --arg mingw_w64_source "${MINGW_W64_SOURCE}" \
+    --arg mingw_w64_sha256 "$(source_checksum "${MINGW_W64_SOURCE}")" \
+    --arg llvm_mingw_tag "${LLVM_MINGW_TAG}" \
+    --arg llvm_mingw_commit "${LLVM_MINGW_COMMIT}" \
+    --arg llvm_mingw_source "${LLVM_MINGW_SOURCE}" \
+    --arg llvm_mingw_sha256 "$(source_checksum "${LLVM_MINGW_SOURCE}")" \
     '{name: $name, llvm: $llvm, source: {name: $source_name, sha256: $source_sha256},
       projects: ($projects | split(";")), runtimes: ($runtimes | split(";")), targets: ($targets | split(";")),
-      darwin_tools: ($darwin_tools | split(";")), base_image: $base_image, build_commit: $build_commit,
-      build_dirty: $build_dirty, build_time: $build_time,
-      files: [($name + ".tar.xz"), ($name + ".tar.gz"), ($name + ".tar.zst")]}' \
+      darwin_tools: ($darwin_tools | split(";")),
+      mingw: {files: $mingw_files, triples: ($mingw_triples | split(";")),
+        runtimes: ($mingw_runtimes | split(";")), linkage: "static", crt: $mingw_crt,
+        win32_winnt: $mingw_win32_winnt,
+        mingw_w64: {version: $mingw_w64_version, source: {name: $mingw_w64_source, sha256: $mingw_w64_sha256}},
+        llvm_mingw: {repository: "https://github.com/mstorsjo/llvm-mingw", tag: $llvm_mingw_tag,
+          commit: $llvm_mingw_commit, source: {name: $llvm_mingw_source, sha256: $llvm_mingw_sha256}}},
+      base_image: $base_image, build_commit: $build_commit, build_dirty: $build_dirty, build_time: $build_time,
+      files: ($llvm_files + $mingw_files)}' \
     >"${output_basename}.json"
 }
 
@@ -119,20 +203,15 @@ main() {
   local build_time
   build_time="${BUILD_TIME:-$(date -u '+%Y-%m-%d_%H-%M-%S')}"
   local output_dir="${ROOT_DIR}/.out/llvm-${version}-${build_time}"
+  local mingw_dir="${ROOT_DIR}/.build/llvm-${version}-mingw"
   local archive="${ROOT_DIR}/tarballs/${source_name}"
   local checksum
-  checksum="$(awk -v name="${source_name}" '$2 == name {print $1}' "${THIS_DIR}/sources.sha256")"
-  if [[ ! "${checksum}" =~ ^[a-f0-9]{64}$ ]]; then
-    printf 'No verified source checksum for LLVM %s\n' "${version}" >&2
-    return 1
-  fi
-  mkdir -p "${ROOT_DIR}/tarballs" "${source_dir}" "${output_dir}" "${install_dir}"
-  if [[ ! -f "${archive}" ]]; then
-    curl --fail --location --retry 3 --output "${archive}.part" \
-      "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/${source_name}"
-    mv -- "${archive}.part" "${archive}"
-  fi
-  printf '%s  %s\n' "${checksum}" "${archive}" | sha256sum --check
+  checksum="$(source_checksum "${source_name}")"
+  mkdir -p "${source_dir}" "${mingw_dir}" "${output_dir}" "${install_dir}"
+  fetch_source "${source_name}" \
+    "https://github.com/llvm/llvm-project/releases/download/llvmorg-${version}/${source_name}"
+  fetch_source "${LLVM_MINGW_SOURCE}" "${LLVM_MINGW_URL}"
+  fetch_source "${MINGW_W64_SOURCE}" "${MINGW_W64_URL}"
   if [[ ! -f "${source_dir}/llvm/CMakeLists.txt" ]]; then
     tar -xJf "${archive}" --strip-components=1 -C "${source_dir}"
   fi
@@ -211,13 +290,41 @@ main() {
   rm -rf -- "${install_dir}"
   mkdir -p "${install_dir}"
   cmake --install "${source_dir}/build" 2>&1 | tee "${source_dir}/install.log"
+
+  # The MinGW stage may add files to the installation, but must not change any
+  # file of LLVM, so that the LLVM archives hold the same files as without it.
+  local llvm_manifest="${mingw_dir}/llvm.manifest"
+  local full_manifest="${mingw_dir}/llvm-mingw.manifest"
+  tree_manifest "${install_dir}" >"${llvm_manifest}"
+  "${THIS_DIR}/build-mingw" "${install_dir}" "${source_dir}" "${mingw_dir}" \
+    "${ROOT_DIR}/tarballs/${LLVM_MINGW_SOURCE}" "${ROOT_DIR}/tarballs/${MINGW_W64_SOURCE}" "${jobs}" \
+    2>&1 | tee "${mingw_dir}/build.log"
+  tree_manifest "${install_dir}" >"${full_manifest}"
+  local changed
+  changed="$(LC_ALL=C comm -23 "${llvm_manifest}" "${full_manifest}")"
+  if [[ -n "${changed}" ]]; then
+    printf 'The MinGW stage changed files of the LLVM installation:\n%s\n' "${changed}" >&2
+    return 1
+  fi
+  local llvm_paths="${mingw_dir}/llvm.paths"
+  local mingw_paths="${mingw_dir}/mingw.paths"
+  manifest_paths "${llvm_manifest}" >"${llvm_paths}"
+  manifest_paths "${full_manifest}" | LC_ALL=C comm -13 "${llvm_paths}" - >"${mingw_paths}"
+
   "${THIS_DIR}/test-toolchain" "${install_dir}" "${version}" 2>&1 | tee "${source_dir}/verify.log"
 
   local basename="llvm-${version}-${build_time}"
-  package_all "${install_dir}" "${output_dir}/${basename}"
-  write_metadata "${output_dir}/${basename}" "${version}" "${source_name}" "${checksum}" "${install_dir}" "${build_time}"
+  local mingw_basename="llvm-mingw-${version}-${build_time}"
+  package_all "${install_dir}" "${llvm_paths}" "${output_dir}/${basename}"
+  package_all "${install_dir}" "${mingw_paths}" "${output_dir}/${mingw_basename}"
+  write_metadata "${output_dir}/${basename}" "${mingw_basename}" "${version}" "${source_name}" "${checksum}" \
+    "${install_dir}" "${build_time}"
+  local names
+  names="$(jq -r '.files[]' "${output_dir}/${basename}.json")"
+  local files=()
+  mapfile -t files <<<"${names}"
   pushd "${output_dir}" >/dev/null
-  sha256sum -- "${basename}.tar.xz" "${basename}.tar.gz" "${basename}.tar.zst" >SHA256SUMS
+  sha256sum -- "${files[@]}" >SHA256SUMS
   sha256sum --check SHA256SUMS
   popd >/dev/null
   printf 'Verified artifacts: %s\n' "${output_dir}"

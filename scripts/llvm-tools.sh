@@ -86,8 +86,32 @@ DARWIN_TOOLS=(
   llvm-symbolizer
 )
 
-# Print the LLVM_TOOLCHAIN_TOOLS value of the build: the default list and the
-# Darwin tools, separated by semicolons.
+# The LLVM tools that the target-prefixed MinGW tools of llvm-mingw
+# (install-wrappers.sh) link to, such as x86_64-w64-mingw32-windres to
+# llvm-windres. llvm-addr2line and llvm-windres are symlinks to
+# llvm-symbolizer and llvm-rc.
+# shellcheck disable=SC2034 # used by the scripts that source this file
+MINGW_TOOLS=(
+  llvm-addr2line
+  llvm-ar
+  llvm-dlltool
+  llvm-nm
+  llvm-objcopy
+  llvm-objdump
+  llvm-ranlib
+  llvm-rc
+  llvm-readelf
+  llvm-readobj
+  llvm-size
+  llvm-strings
+  llvm-strip
+  llvm-symbolizer
+  llvm-windres
+)
+
+# Print the LLVM_TOOLCHAIN_TOOLS value of the build: the default list, the
+# Darwin tools, and the MinGW tools, separated by semicolons.
 function toolchain_tools() {
-  printf '%s\n' "${DEFAULT_TOOLCHAIN_TOOLS[@]}" "${DARWIN_TOOLS[@]}" | LC_ALL=C sort -u | paste -sd ';' -
+  printf '%s\n' "${DEFAULT_TOOLCHAIN_TOOLS[@]}" "${DARWIN_TOOLS[@]}" "${MINGW_TOOLS[@]}" |
+    LC_ALL=C sort -u | paste -sd ';' -
 }

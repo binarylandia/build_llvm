@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # Usage: scripts/test-toolchain INSTALL_DIR LLVM_VERSION
-# Check installed compilers, native runtimes, WebAssembly linking, and the
-# Darwin tools of the osxcross llvm flavor.
+# Check installed compilers, native runtimes, WebAssembly linking, the Darwin
+# tools of the osxcross llvm flavor, and the MinGW runtimes (scripts/test-mingw).
 set -euo pipefail
 trap "exit" INT
 
@@ -34,6 +34,19 @@ check_darwin_tools() {
   printf 'Darwin tools: %s\n' "${DARWIN_TOOLS[*]}"
 }
 
+# Fail when an LLVM tool that the MinGW tools link to is missing.
+check_mingw_tools() {
+  local install_dir="${1}"
+  local tool
+  for tool in "${MINGW_TOOLS[@]}"; do
+    if [[ ! -x "${install_dir}/bin/${tool}" ]]; then
+      printf 'Missing MinGW tool: %s\n' "${install_dir}/bin/${tool}" >&2
+      return 1
+    fi
+  done
+  printf 'MinGW tools: %s\n' "${MINGW_TOOLS[*]}"
+}
+
 main() {
   local install_dir="${1:?Missing installation directory}"
   local version="${2:?Missing LLVM version}"
@@ -48,6 +61,7 @@ main() {
   lldb --version
   flang --version
   check_darwin_tools "${install_dir}" "${version}"
+  check_mingw_tools "${install_dir}"
 
   local tool
   for tool in "${install_dir}/bin/"* "${install_dir}/lib/"*.so*; do
@@ -132,6 +146,7 @@ EOF
     [[ "${magic}" == ' 00 61 73 6d 01 00 00 00' ]]
   done
   printf 'Native compiler/runtime and wasm32/wasm64 smoke checks passed\n'
+  "${THIS_DIR}/test-mingw" "${install_dir}"
   rm -rf -- "${test_dir}"
   trap - EXIT
 }
