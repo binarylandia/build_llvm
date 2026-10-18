@@ -9,6 +9,9 @@ trap "exit" INT
 THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
 ROOT_DIR="$(dirname "${THIS_DIR}")"
 
+# shellcheck source=scripts/llvm-tools.sh
+source "${THIS_DIR}/llvm-tools.sh"
+
 main() {
   local version="${1:-${LLVM_VERSION:-22.1.8}}"
   local jobs="${JOBS:-6}"
@@ -44,6 +47,9 @@ main() {
     fi
   done
 
+  local tools
+  tools="$(toolchain_tools)"
+
   export CFLAGS="-fPIC -g0 -Os ${CFLAGS:-}"
   export CXXFLAGS="-fPIC -g0 -Os ${CXXFLAGS:-}"
   export LDFLAGS="-static-libgcc -static-libstdc++ -s ${LDFLAGS:-}"
@@ -64,6 +70,7 @@ main() {
     -DLLVM_FORCE_VC_REPOSITORY=https://github.com/llvm/llvm-project \
     -DLLVM_FORCE_VC_REVISION="llvmorg-${version}" \
     -DLLVM_INSTALL_TOOLCHAIN_ONLY=ON \
+    -DLLVM_TOOLCHAIN_TOOLS="${tools}" \
     -DLLVM_BUILD_TOOLS=ON \
     -DLLVM_INCLUDE_TOOLS=ON \
     -DLLVM_INSTALL_TOOLS=ON \
@@ -76,6 +83,7 @@ main() {
     -DLLVM_ENABLE_FFI=ON \
     -DLLVM_ENABLE_RTTI=ON \
     -DLLVM_ENABLE_THREADS=ON \
+    -DLLVM_ENABLE_LIBXML2=FORCE_ON \
     -DLLVM_ENABLE_ZLIB=FORCE_ON \
     -DZLIB_LIBRARY_RELEASE=/usr/lib/libz.a \
     -DZLIB_USE_STATIC_LIBS=ON \
