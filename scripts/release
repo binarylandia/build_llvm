@@ -107,7 +107,9 @@ function write_notes() {
         "- Runtimes: \(.runtimes | code)",
         "- Targets: \(.targets | code)",
         "- Darwin tools for osxcross: \(.darwin_tools | code)",
-        "- MinGW runtimes for \(.mingw.triples | code) in `\(.mingw.files[0] | rtrimstr(".tar.xz")).tar.*`, which unpacks into the prefix of the LLVM archive: mingw-w64 \(.mingw.mingw_w64.version) (`\(.mingw.mingw_w64.source.name)`, sha256 `\(.mingw.mingw_w64.source.sha256)`) with the \(.mingw.crt | ascii_upcase) C runtime, built with the scripts of llvm-mingw \(.mingw.llvm_mingw.tag) (commit \(.mingw.llvm_mingw.commit)). The runtimes are static libraries, so programs import only Windows system DLLs: \(.mingw.runtimes | code)"),
+        "- MinGW triples: \(.mingw.triples | code), in `\(.mingw.files[0] | rtrimstr(".tar.xz")).tar.*`, which unpacks into the prefix of the LLVM archive",
+        "- MinGW sources: mingw-w64 \(.mingw.mingw_w64.version) (`\(.mingw.mingw_w64.source.name)`, sha256 `\(.mingw.mingw_w64.source.sha256)`) with the \(.mingw.crt | ascii_upcase) C runtime, built with the scripts of llvm-mingw \(.mingw.llvm_mingw.tag) (commit \(.mingw.llvm_mingw.commit))",
+        "- MinGW runtimes, all static, so that programs import only Windows system DLLs: \(.mingw.runtimes | code)"),
       "\n`SHA256SUMS` lists the checksums of the archives, and `manifest.json` the metadata of the build."
     ' "${manifest}"
   } >"${notes}"
