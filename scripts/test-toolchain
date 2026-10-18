@@ -1,9 +1,38 @@
 #!/usr/bin/env bash
 #
 # Usage: scripts/test-toolchain INSTALL_DIR LLVM_VERSION
-# Check installed compilers, native runtimes, and WebAssembly linking.
+# Check installed compilers, native runtimes, WebAssembly linking, and the
+# Darwin tools of the osxcross llvm flavor.
 set -euo pipefail
 trap "exit" INT
+
+THIS_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+
+# shellcheck source=scripts/llvm-tools.sh
+source "${THIS_DIR}/llvm-tools.sh"
+
+# Fail when a Darwin tool is missing from the installation or does not report
+# the LLVM version.
+check_darwin_tools() {
+  local install_dir="${1}"
+  local version="${2}"
+  local tool output
+  for tool in "${DARWIN_TOOLS[@]}"; do
+    if [[ ! -x "${install_dir}/bin/${tool}" ]]; then
+      printf 'Missing Darwin tool: %s\n' "${install_dir}/bin/${tool}" >&2
+      return 1
+    fi
+    if ! output="$("${install_dir}/bin/${tool}" --version 2>&1)"; then
+      printf '%s --version failed:\n%s\n' "${tool}" "${output}" >&2
+      return 1
+    fi
+    if [[ "${output}" != *"${version}"* ]]; then
+      printf '%s --version does not report LLVM %s:\n%s\n' "${tool}" "${version}" "${output}" >&2
+      return 1
+    fi
+  done
+  printf 'Darwin tools: %s\n' "${DARWIN_TOOLS[*]}"
+}
 
 main() {
   local install_dir="${1:?Missing installation directory}"
@@ -18,6 +47,7 @@ main() {
   ld.lld --version
   lldb --version
   flang --version
+  check_darwin_tools "${install_dir}" "${version}"
 
   local tool
   for tool in "${install_dir}/bin/"* "${install_dir}/lib/"*.so*; do
