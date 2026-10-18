@@ -3,6 +3,8 @@
 # Usage: scripts/main [LLVM_VERSION]
 # Build, verify, and package LLVM inside the builder container.
 # JOBS controls compile parallelism; LINK_JOBS controls link parallelism.
+# ./build sets BUILD_TIME, SOURCE_DATE_EPOCH, and the provenance that the
+# metadata records (DOCKER_BASE_IMAGE, BUILD_COMMIT, BUILD_DIRTY).
 set -euo pipefail
 trap "exit" INT
 
@@ -12,7 +14,102 @@ ROOT_DIR="$(dirname "${THIS_DIR}")"
 # shellcheck source=scripts/llvm-tools.sh
 source "${THIS_DIR}/llvm-tools.sh"
 
+PROJECTS=(clang clang-tools-extra flang lld lldb)
+RUNTIMES=(libcxx libcxxabi libunwind compiler-rt openmp flang-rt)
+TARGETS=(X86 AArch64 ARM WebAssembly)
+
+# Print the arguments separated by semicolons, as CMake lists are.
+function cmake_list() {
+  local IFS=";"
+  printf '%s' "$*"
+}
+
+# Write the files of a directory as a tar stream to stdout. The entries are
+# sorted, owned by root, and carry the time SOURCE_DATE_EPOCH, so the same files
+# always give the same archive. Each path is listed once; tar does not recurse.
+function tar_dir() {
+  local input_dir="${1}"
+  find "${input_dir}" -mindepth 1 -printf '%P\n' | LC_ALL=C sort |
+    tar --posix --no-recursion --mtime="@${SOURCE_DATE_EPOCH}" --owner=0 --group=0 --numeric-owner \
+      --pax-option=exthdr.name=%d/PaxHeaders/%f,delete=atime,delete=ctime \
+      -cf - -C "${input_dir}" --files-from=-
+}
+
+# The compressors give the same output for the same input with any number of
+# threads: xz in its multi-threaded mode, pigz without the file name and time,
+# and zstd always. pigz 2.3 stores the time unless -T is given.
+function package_xz() {
+  local input_dir="${1}"
+  local output_basename="${2}"
+  tar_dir "${input_dir}" | xz -T "$(($(nproc) > 1 ? $(nproc) : 2))" -5 >"${output_basename}.tar.xz"
+}
+
+function package_gz() {
+  local input_dir="${1}"
+  local output_basename="${2}"
+  tar_dir "${input_dir}" | pigz -n -T -p "$(nproc)" -7 >"${output_basename}.tar.gz"
+}
+
+function package_zst() {
+  local input_dir="${1}"
+  local output_basename="${2}"
+  tar_dir "${input_dir}" | zstd -q -T"$(nproc)" -7 >"${output_basename}.tar.zst"
+}
+
+function package_all() {
+  local input_dir="${1}"
+  local output_basename="${2}"
+  package_xz "${input_dir}" "${output_basename}"
+  package_gz "${input_dir}" "${output_basename}"
+  package_zst "${input_dir}" "${output_basename}"
+}
+
+# Write <archive basename>.json with the facts of the build that scripts/release
+# puts into the manifest of a release.
+function write_metadata() {
+  local output_basename="${1}"
+  local version="${2}"
+  local source_name="${3}"
+  local source_sha256="${4}"
+  local install_dir="${5}"
+  local build_time="${6}"
+  local name="${output_basename##*/}"
+  local installed=()
+  local tool
+  for tool in "${DARWIN_TOOLS[@]}"; do
+    if [[ -e "${install_dir}/bin/${tool}" ]]; then
+      installed+=("${tool}")
+    fi
+  done
+  jq -n \
+    --arg name "${name}" \
+    --arg llvm "${version}" \
+    --arg source_name "${source_name}" \
+    --arg source_sha256 "${source_sha256}" \
+    --arg projects "$(cmake_list "${PROJECTS[@]}")" \
+    --arg runtimes "$(cmake_list "${RUNTIMES[@]}")" \
+    --arg targets "$(cmake_list "${TARGETS[@]}")" \
+    --arg darwin_tools "$(cmake_list "${installed[@]}")" \
+    --arg base_image "${DOCKER_BASE_IMAGE:?}" \
+    --arg build_commit "${BUILD_COMMIT:?}" \
+    --argjson build_dirty "${BUILD_DIRTY:?}" \
+    --arg build_time "${build_time}" \
+    '{name: $name, llvm: $llvm, source: {name: $source_name, sha256: $source_sha256},
+      projects: ($projects | split(";")), runtimes: ($runtimes | split(";")), targets: ($targets | split(";")),
+      darwin_tools: ($darwin_tools | split(";")), base_image: $base_image, build_commit: $build_commit,
+      build_dirty: $build_dirty, build_time: $build_time,
+      files: [($name + ".tar.xz"), ($name + ".tar.gz"), ($name + ".tar.zst")]}' \
+    >"${output_basename}.json"
+}
+
 main() {
+  local var
+  for var in SOURCE_DATE_EPOCH DOCKER_BASE_IMAGE BUILD_COMMIT BUILD_DIRTY; do
+    if [[ -z "${!var:-}" ]]; then
+      printf '%s is not set; run scripts/main through ./build\n' "${var}" >&2
+      return 1
+    fi
+  done
   local version="${1:-${LLVM_VERSION:-22.1.8}}"
   local jobs="${JOBS:-6}"
   local link_jobs="${LINK_JOBS:-1}"
@@ -20,7 +117,7 @@ main() {
   local source_dir="${ROOT_DIR}/.build/llvm-${version}"
   local install_dir="/opt/llvm/${version}"
   local build_time
-  build_time="$(date -u '+%Y-%m-%d_%H-%M-%S')"
+  build_time="${BUILD_TIME:-$(date -u '+%Y-%m-%d_%H-%M-%S')}"
   local output_dir="${ROOT_DIR}/.out/llvm-${version}-${build_time}"
   local archive="${ROOT_DIR}/tarballs/${source_name}"
   local checksum
@@ -49,6 +146,10 @@ main() {
 
   local tools
   tools="$(toolchain_tools)"
+  local projects runtimes targets
+  projects="$(cmake_list "${PROJECTS[@]}")"
+  runtimes="$(cmake_list "${RUNTIMES[@]}")"
+  targets="$(cmake_list "${TARGETS[@]}")"
 
   export CFLAGS="-fPIC -g0 -Os ${CFLAGS:-}"
   export CXXFLAGS="-fPIC -g0 -Os ${CXXFLAGS:-}"
@@ -63,9 +164,9 @@ main() {
     -DCMAKE_C_COMPILER_LAUNCHER=ccache \
     -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
     -DLLVM_PARALLEL_LINK_JOBS="${link_jobs}" \
-    -DLLVM_ENABLE_PROJECTS='clang;clang-tools-extra;flang;lld;lldb' \
-    -DLLVM_ENABLE_RUNTIMES='libcxx;libcxxabi;libunwind;compiler-rt;openmp;flang-rt' \
-    -DLLVM_TARGETS_TO_BUILD='X86;AArch64;ARM;WebAssembly' \
+    -DLLVM_ENABLE_PROJECTS="${projects}" \
+    -DLLVM_ENABLE_RUNTIMES="${runtimes}" \
+    -DLLVM_TARGETS_TO_BUILD="${targets}" \
     -DLLVM_STATIC_LINK_CXX_STDLIB=ON \
     -DLLVM_FORCE_VC_REPOSITORY=https://github.com/llvm/llvm-project \
     -DLLVM_FORCE_VC_REVISION="llvmorg-${version}" \
@@ -113,9 +214,8 @@ main() {
   "${THIS_DIR}/test-toolchain" "${install_dir}" "${version}" 2>&1 | tee "${source_dir}/verify.log"
 
   local basename="llvm-${version}-${build_time}"
-  tar --posix -cf - -C "${install_dir}" . | xz -T "${jobs}" -4 >"${output_dir}/${basename}.tar.xz"
-  tar --posix -cf - -C "${install_dir}" . | pigz -p "${jobs}" -7 >"${output_dir}/${basename}.tar.gz"
-  tar --posix -cf - -C "${install_dir}" . | zstd -T"${jobs}" -9 >"${output_dir}/${basename}.tar.zst"
+  package_all "${install_dir}" "${output_dir}/${basename}"
+  write_metadata "${output_dir}/${basename}" "${version}" "${source_name}" "${checksum}" "${install_dir}" "${build_time}"
   pushd "${output_dir}" >/dev/null
   sha256sum -- "${basename}.tar.xz" "${basename}.tar.gz" "${basename}.tar.zst" >SHA256SUMS
   sha256sum --check SHA256SUMS
