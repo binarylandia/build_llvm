@@ -1,0 +1,19 @@
+Defect: with the PGO profile of a clang and lld training build (LLVM_PROFDATA_FILE), clang 23.1.4 at -O3 compiles flang/lib/Evaluate/expression.cpp for more than three hours (29 seconds without the profile). The profile holds no samples of flang code, so flang gains nothing from it.
+Upstream status: not reported upstream; local packaging policy of a PGO build whose training covers clang and lld only.
+Version-bump check: build the final stage and confirm that every flang source compiles in minutes; drop this patch when flang/lib/Evaluate compiles quickly with -fprofile-instr-use.
+
+--- a/flang/CMakeLists.txt
++++ b/flang/CMakeLists.txt
+@@ -497,6 +497,12 @@
+   add_compile_definitions(FLANG_INCLUDE_TESTS=1)
+ endif()
+ 
++# The PGO profile of the build holds no samples of flang, and clang spends hours
++# on some template-heavy flang sources with it.
++if (LLVM_PROFDATA_FILE)
++  add_compile_options(-fno-profile-instr-use)
++endif()
++
+ add_subdirectory(include)
+ add_subdirectory(lib)
+ add_subdirectory(cmake/modules)
