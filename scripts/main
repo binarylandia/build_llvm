@@ -395,6 +395,7 @@ function build_final() {
     -DCLANG_INSTALL_TOOLS=ON \
     -DCLANG_OPENMP_RUNTIME=libomp \
     -DCLANG_PLUGIN_SUPPORT=ON \
+    -DQUADMATHLIB="${HOST_GCC_DIR}/${HOST_TUPLE}/lib64/libquadmath.a" \
     -DLLVM_ENABLE_FFI=ON \
     -DFFI_INCLUDE_DIR="${HOST_LIBS_DIR}/include" \
     -DFFI_LIBRARY_DIR="${HOST_LIBS_DIR}/lib" \
@@ -464,12 +465,18 @@ main() {
   export CCACHE_MAXSIZE="50G"
   unset CFLAGS CXXFLAGS LDFLAGS
 
-  build_stage1 "${source_dir}" "${stage1_build}" "${stage1_dir}" "${jobs}" "${link_jobs}" 2>&1 |
-    tee "${source_dir}/stage1.log"
-  build_instrumented "${source_dir}" "${instrumented_build}" "${stage1_dir}" "${jobs}" "${link_jobs}" 2>&1 |
-    tee "${source_dir}/stage2-instrumented.log"
-  train "${source_dir}" "${instrumented_build}" "${stage1_dir}" "${profdata}" "${jobs}" 2>&1 |
-    tee "${source_dir}/training.log"
+  # A profile of an earlier run means that stage 1, stage 2, and the training
+  # are done; remove .build/llvm-<version> to run them again.
+  if [[ -f "${profdata}" && -x "${stage1_dir}/bin/clang" ]]; then
+    printf 'Reusing stage 1 and the profile of %s\n' "${source_dir}"
+  else
+    build_stage1 "${source_dir}" "${stage1_build}" "${stage1_dir}" "${jobs}" "${link_jobs}" 2>&1 |
+      tee "${source_dir}/stage1.log"
+    build_instrumented "${source_dir}" "${instrumented_build}" "${stage1_dir}" "${jobs}" "${link_jobs}" 2>&1 |
+      tee "${source_dir}/stage2-instrumented.log"
+    train "${source_dir}" "${instrumented_build}" "${stage1_dir}" "${profdata}" "${jobs}" 2>&1 |
+      tee "${source_dir}/training.log"
+  fi
   build_final "${source_dir}" "${source_dir}/build" "${stage1_dir}" "${profdata}" "${install_dir}" "${version}" \
     "${jobs}" "${link_jobs}" 2>&1 | tee "${source_dir}/build.log"
 
