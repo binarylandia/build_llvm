@@ -11,7 +11,7 @@ Targets x86_64 Linux hosts. Supports code generation for x86_64, AArch64, ARM, a
 Run one version per invocation:
 
 ```bash
-./build './scripts/main 23.1.1'
+./build './scripts/main 23.1.4'
 ```
 
 LLVM builds in three stages, all on the glibc 2.17 sysroot of the `x86_64-unknown-linux-gnu` GCC 16 toolchain of [build_crosstool-ng](https://github.com/binarylandia/build_crosstool-ng), which clang reads from a configuration file next to it in each build tree:
@@ -20,12 +20,12 @@ LLVM builds in three stages, all on the glibc 2.17 sysroot of the `x86_64-unknow
 2. The clang of stage 1 builds a clang and an lld with IR instrumentation, which record a profile while they compile and link a part of LLVM and Clang
 3. The clang of stage 1 builds the installation with that profile and ThinLTO, and links the tools against the runtimes of stage 1
 
-The LLVM version is the one that the Rust release of the consumers bundles (`rustc -vV`): Rust 1.99.1 bundles LLVM 23.1.1. Consumers that mix Rust and C code, or use the LLVM tools on the profiles and object files of rustc, then work with one LLVM version. Source checksums are pinned in `scripts/sources.sha256`. Each version has a separate build and installation directory. Builds run native C/C++, libc++, Fortran, and OpenMP checks, compile and link wasm32 and wasm64 modules, check the Darwin tools, and check the MinGW runtimes before packaging. Archives, `SHA256SUMS`, and one metadata file are written to `.out/llvm-<version>-<build time>/`.
+The LLVM major and minor version follow the LLVM that the Rust release of the consumers bundles (`rustc -vV`), with the newest patch release of that series: Rust 1.99.1 bundles LLVM 23.1.1, and this build is LLVM 23.1.4. Consumers that mix Rust and C code, or use the LLVM tools on the profiles and object files of rustc, then work with one LLVM release series. Source checksums are pinned in `scripts/sources.sha256`. Each version has a separate build and installation directory. Builds run native C/C++, libc++, Fortran, and OpenMP checks, compile and link wasm32 and wasm64 modules, check the Darwin tools, and check the MinGW runtimes before packaging. Archives, `SHA256SUMS`, and one metadata file are written to `.out/llvm-<version>-<build time>/`.
 
 Compile parallelism defaults to 6 jobs, with one link job. For example:
 
 ```bash
-./build 'JOBS=8 LINK_JOBS=1 ./scripts/main 23.1.1'
+./build 'JOBS=8 LINK_JOBS=1 ./scripts/main 23.1.4'
 ```
 
 LLDB is built without Python, curses, and libedit integration to avoid their host runtime dependencies.
@@ -58,8 +58,8 @@ OpenMP programs link libomp statically and use the system glibc.
 `llvm-mingw-<version>-<build time>.tar.*` holds MinGW-w64 runtimes for `x86_64-w64-mingw32` and `aarch64-w64-mingw32`, built with the clang, lld, and LLVM tools of the same release. Unpack it into the prefix of the LLVM archive:
 
 ```bash
-tar -C /opt/llvm -xf llvm-23.1.1-<build time>.tar.xz
-tar -C /opt/llvm -xf llvm-mingw-23.1.1-<build time>.tar.xz
+tar -C /opt/llvm -xf llvm-23.1.4-<build time>.tar.xz
+tar -C /opt/llvm -xf llvm-mingw-23.1.4-<build time>.tar.xz
 /opt/llvm/bin/x86_64-w64-mingw32-clang++ program.cpp -o program.exe
 ```
 
