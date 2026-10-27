@@ -2,7 +2,7 @@
 
 ## [Releases](https://github.com/binarylandia/build_llvm/releases)
 
-Builds a portable LLVM installation on manylinux2014 (glibc 2.17) with Clang, LLD, LLDB, Flang, and OpenMP. GCC and C++ runtimes are linked statically into the tools. Host system libraries, including glibc, can remain dynamic dependencies.
+Builds a portable LLVM installation with Clang, LLD, LLDB, Flang, and OpenMP that runs on x86_64 Linux with glibc 2.17 or later. The tools link libc++, libc++abi, libunwind, the compiler-rt builtins, zlib, zstd, libxml2, and libffi statically; glibc remains a dynamic dependency.
 
 Targets x86_64 Linux hosts. Supports code generation for x86_64, AArch64, ARM, and WebAssembly (wasm32 and wasm64). WASI and Emscripten sysroots are supplied separately. MinGW runtimes for x86_64 and AArch64 Windows come in a separate archive (see [MinGW runtimes](#mingw-runtimes)).
 
@@ -11,16 +11,21 @@ Targets x86_64 Linux hosts. Supports code generation for x86_64, AArch64, ARM, a
 Run one version per invocation:
 
 ```bash
-./build './scripts/main 22.1.8'
-./build './scripts/main 23.1.1'
+./build './scripts/main 23.1.4'
 ```
+
+LLVM builds in three stages, all on the glibc 2.17 sysroot of the `x86_64-unknown-linux-gnu` GCC 16 toolchain of [build_crosstool-ng](https://github.com/binarylandia/build_crosstool-ng), which clang reads from a configuration file next to it in each build tree:
+
+1. The GCC of that toolchain builds clang, lld, and the LLVM runtimes (static libc++, libc++abi, libunwind, compiler-rt)
+2. The clang of stage 1 builds a clang and an lld with IR instrumentation, which record a profile while they compile and link a part of LLVM and Clang
+3. The clang of stage 1 builds the installation with that profile and ThinLTO, and links the tools against the runtimes of stage 1
 
 Source checksums are pinned in `scripts/sources.sha256`. Each version has a separate build and installation directory. Builds run native C/C++, libc++, Fortran, and OpenMP checks, compile and link wasm32 and wasm64 modules, check the Darwin tools, and check the MinGW runtimes before packaging. Archives, `SHA256SUMS`, and one metadata file are written to `.out/llvm-<version>-<build time>/`.
 
 Compile parallelism defaults to 6 jobs, with one link job. For example:
 
 ```bash
-./build 'JOBS=8 LINK_JOBS=1 ./scripts/main 22.1.8'
+./build 'JOBS=8 LINK_JOBS=1 ./scripts/main 23.1.4'
 ```
 
 LLDB is built without Python, curses, and libedit integration to avoid their host runtime dependencies.
@@ -33,10 +38,12 @@ LLDB is built without Python, curses, and libedit integration to avoid their hos
 ./scripts/release <build time>
 ```
 
-- The base image is pinned by digest in `build`, and the LLVM source by checksum
+- The base image (Debian 13) is pinned by digest in `build`, and the LLVM source by checksum
+- The image trusts neither emSign ECC Root CA - G3 nor AAA Certificate Services, the roots above the eMudhra intermediate CAs whose private keys became public in October 2026 (`dev/docker/files/distrust-compromised-roots`)
+- The image downloads the host GCC toolchain and the sources of zlib, zstd, libxml2, and libffi through `dev/docker/files/fetch`, which fails unless a download matches its checksum in `dev/docker/files/checksums`
 - Archives list their files in sorted order with one owner and the commit time, so the same files give the same archive
 - `scripts/release` publishes only a build of a clean, pushed commit, and never changes a published release
-- Each release has `SHA256SUMS` and `manifest.json`, which records the LLVM version, source tarball and checksum, projects, runtimes, targets, Darwin tools, MinGW triples, mingw-w64 version and C runtime, llvm-mingw commit, base image, and build commit
+- Each release has `SHA256SUMS` and `manifest.json`, which records the LLVM version, source tarball and checksum, projects, runtimes, targets, Darwin tools, MinGW triples, mingw-w64 version and C runtime, llvm-mingw commit, the stages and the host GCC toolchain, base image, and build commit
 
 For native static C++ programs with the LLVM runtimes, use:
 
@@ -51,8 +58,8 @@ OpenMP programs link libomp statically and use the system glibc.
 `llvm-mingw-<version>-<build time>.tar.*` holds MinGW-w64 runtimes for `x86_64-w64-mingw32` and `aarch64-w64-mingw32`, built with the clang, lld, and LLVM tools of the same release. Unpack it into the prefix of the LLVM archive:
 
 ```bash
-tar -C /opt/llvm -xf llvm-22.1.8-<build time>.tar.xz
-tar -C /opt/llvm -xf llvm-mingw-22.1.8-<build time>.tar.xz
+tar -C /opt/llvm -xf llvm-23.1.4-<build time>.tar.xz
+tar -C /opt/llvm -xf llvm-mingw-23.1.4-<build time>.tar.xz
 /opt/llvm/bin/x86_64-w64-mingw32-clang++ program.cpp -o program.exe
 ```
 
@@ -75,7 +82,8 @@ tar -C /opt/llvm -xf llvm-mingw-22.1.8-<build time>.tar.xz
 
 ## Features
 
-- Statically linked against libgcc and libstdc++
+- Optimized with a profile of the compiler itself (PGO) and ThinLTO
+- Statically linked against libc++, libc++abi, libunwind, and the compiler-rt builtins
 - FFI, RTTI, and threading enabled
 - zlib and zstd compression support
 - Perf profiling support
@@ -89,4 +97,4 @@ tar -C /opt/llvm -xf llvm-mingw-22.1.8-<build time>.tar.xz
 
 ## Keywords
 
-prebuilt llvm, prebuilt clang, llvm binary, clang download, linux compiler, portable llvm, static clang, manylinux llvm, lld linker, lldb debugger, flang fortran, libc++
+prebuilt llvm, prebuilt clang, llvm binary, clang download, linux compiler, portable llvm, static clang, glibc 2.17 llvm, pgo clang, lld linker, lldb debugger, flang fortran, libc++

@@ -4,7 +4,10 @@
 # Build LLVM and the MinGW runtimes on top of it, verify them, and package them
 # inside the builder container: the LLVM archives hold the LLVM installation,
 # and the llvm-mingw archives hold the MinGW runtimes, which unpack into the
-# same prefix (scripts/build-mingw).
+# same prefix (scripts/build-mingw). LLVM builds in three stages: GCC builds a
+# first clang, an instrumented clang records a profile on a training build, and
+# the first clang builds the installation with that profile and ThinLTO. Every
+# stage compiles and links on the glibc 2.17 sysroot of the host GCC toolchain.
 # JOBS controls compile parallelism; LINK_JOBS controls link parallelism.
 # ./build sets BUILD_TIME, SOURCE_DATE_EPOCH, and the provenance that the
 # metadata records (DOCKER_BASE_IMAGE, BUILD_COMMIT, BUILD_DIRTY).
@@ -156,6 +159,7 @@ function write_metadata() {
     --arg targets "$(cmake_list "${TARGETS[@]}")" \
     --arg darwin_tools "$(cmake_list "${installed[@]}")" \
     --arg base_image "${DOCKER_BASE_IMAGE:?}" \
+    --slurpfile host_gcc "${HOST_GCC_RECORD:?}" \
     --arg build_commit "${BUILD_COMMIT:?}" \
     --argjson build_dirty "${BUILD_DIRTY:?}" \
     --arg build_time "${build_time}" \
@@ -181,20 +185,246 @@ function write_metadata() {
         mingw_w64: {version: $mingw_w64_version, source: {name: $mingw_w64_source, sha256: $mingw_w64_sha256}},
         llvm_mingw: {repository: "https://github.com/mstorsjo/llvm-mingw", tag: $llvm_mingw_tag,
           commit: $llvm_mingw_commit, source: {name: $llvm_mingw_source, sha256: $llvm_mingw_sha256}}},
+      build: {stages: ["stage 1: GCC 16 builds clang and the LLVM runtimes",
+          "stage 2: an IR-instrumented clang and lld run a training build",
+          "stage 3: the clang of stage 1 builds the installation with the profile and ThinLTO"],
+        cxx_runtime: "libc++, libc++abi, and libunwind of stage 1, linked statically", host_glibc: "2.17",
+        host_gcc: $host_gcc[0]},
       base_image: $base_image, build_commit: $build_commit, build_dirty: $build_dirty, build_time: $build_time,
       files: ($llvm_files + $mingw_files)}' \
     >"${output_basename}.json"
 }
 
+# Write the clang configuration of the glibc 2.17 target into a bin folder.
+# clang reads <triple>.cfg next to itself whenever it compiles for the triple,
+# so every clang of the stages, and the runtimes that the clang of a build tree
+# compiles, use the sysroot, crt files, and libgcc of the host GCC toolchain and
+# link with lld. The installation gets no configuration: its clang uses the
+# headers and libraries of the system it runs on.
+function write_target_config() {
+  local bin_dir="${1}"
+  local gcc_install_dir
+  gcc_install_dir="$(find "${HOST_GCC_DIR}/lib/gcc/${HOST_TUPLE}" -mindepth 1 -maxdepth 1 -type d)"
+  mkdir -p "${bin_dir}"
+  printf -- '%s\n' \
+    "--sysroot=${HOST_GCC_DIR}/${HOST_TUPLE}/sysroot" \
+    "--gcc-install-dir=${gcc_install_dir}" \
+    "-fuse-ld=lld" \
+    >"${bin_dir}/${HOST_TUPLE}.cfg"
+}
+
+# Print the CMake options that every stage shares.
+function common_cmake_options() {
+  printf '%s\n' \
+    -G Ninja \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DLLVM_DEFAULT_TARGET_TRIPLE="${HOST_TUPLE}" \
+    -DLLVM_ENABLE_BINDINGS=OFF \
+    -DLLVM_INCLUDE_BENCHMARKS=OFF \
+    -DLLVM_INCLUDE_DOCS=OFF \
+    -DLLVM_INCLUDE_EXAMPLES=OFF \
+    -DLLVM_INCLUDE_TESTS=OFF
+}
+
+# Print the CMake options of a stage that the clang of stage 1 compiles: the
+# tools link libc++, libc++abi, libunwind, and the compiler-rt builtins of stage
+# 1 statically, so they need neither libstdc++ nor libgcc_s at run time.
+function stage1_compiler_options() {
+  local stage1_dir="${1}"
+  local link_flags="-rtlib=compiler-rt --unwindlib=libunwind -static-libgcc"
+  printf '%s\n' \
+    -DCMAKE_C_COMPILER="${stage1_dir}/bin/clang" \
+    -DCMAKE_CXX_COMPILER="${stage1_dir}/bin/clang++" \
+    -DCMAKE_AR="${stage1_dir}/bin/llvm-ar" \
+    -DCMAKE_RANLIB="${stage1_dir}/bin/llvm-ranlib" \
+    -DLLVM_ENABLE_LLD=ON \
+    -DLLVM_ENABLE_LIBCXX=ON \
+    -DLLVM_STATIC_LINK_CXX_STDLIB=ON \
+    -DCMAKE_EXE_LINKER_FLAGS="${link_flags}" \
+    -DCMAKE_SHARED_LINKER_FLAGS="${link_flags}" \
+    -DCMAKE_MODULE_LINKER_FLAGS="${link_flags}"
+}
+
+# Stage 1: the GCC of the host toolchain builds clang, lld, and the runtimes
+# that the later stages link (static libc++, libc++abi, libunwind) and need for
+# profiling (compiler-rt builtins and profile runtime).
+function build_stage1() {
+  local source_dir="${1}"
+  local build_dir="${2}"
+  local stage1_dir="${3}"
+  local jobs="${4}"
+  local link_jobs="${5}"
+  write_target_config "${build_dir}/bin"
+  local options=()
+  mapfile -t options < <(common_cmake_options)
+  cmake -S "${source_dir}/llvm" -B "${build_dir}" "${options[@]}" \
+    -DCMAKE_INSTALL_PREFIX="${stage1_dir}" \
+    -DCMAKE_C_COMPILER="${HOST_GCC_DIR}/bin/${HOST_TUPLE}-gcc" \
+    -DCMAKE_CXX_COMPILER="${HOST_GCC_DIR}/bin/${HOST_TUPLE}-g++" \
+    -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+    -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+    -DLLVM_PARALLEL_LINK_JOBS="${link_jobs}" \
+    -DLLVM_TARGETS_TO_BUILD=X86 \
+    -DLLVM_ENABLE_PROJECTS="clang;lld" \
+    -DLLVM_ENABLE_RUNTIMES="compiler-rt;libcxx;libcxxabi;libunwind" \
+    -DLLVM_STATIC_LINK_CXX_STDLIB=ON \
+    -DCOMPILER_RT_BUILD_SANITIZERS=OFF \
+    -DCOMPILER_RT_BUILD_XRAY=OFF \
+    -DCOMPILER_RT_BUILD_LIBFUZZER=OFF \
+    -DCOMPILER_RT_BUILD_MEMPROF=OFF \
+    -DCOMPILER_RT_BUILD_ORC=OFF \
+    -DCOMPILER_RT_BUILD_CTX_PROFILE=OFF \
+    -DLIBCXX_ENABLE_SHARED=OFF \
+    -DLIBCXXABI_ENABLE_SHARED=OFF \
+    -DLIBUNWIND_ENABLE_SHARED=OFF \
+    -DLIBCXXABI_USE_LLVM_UNWINDER=ON \
+    -DLIBCXX_STATICALLY_LINK_ABI_IN_STATIC_LIBRARY=ON \
+    -DLIBCXXABI_STATICALLY_LINK_UNWINDER_IN_STATIC_LIBRARY=ON
+  cmake --build "${build_dir}" --parallel "${jobs}"
+  rm -rf -- "${stage1_dir}"
+  cmake --install "${build_dir}"
+  write_target_config "${stage1_dir}/bin"
+}
+
+# Stage 2: the clang of stage 1 builds a clang and an lld that record an IR
+# profile of what they run (LLVM_BUILD_INSTRUMENTED) into the profiles/ folder
+# of the build.
+function build_instrumented() {
+  local source_dir="${1}"
+  local build_dir="${2}"
+  local stage1_dir="${3}"
+  local jobs="${4}"
+  local link_jobs="${5}"
+  write_target_config "${build_dir}/bin"
+  local options=() compiler=()
+  mapfile -t options < <(common_cmake_options)
+  mapfile -t compiler < <(stage1_compiler_options "${stage1_dir}")
+  cmake -S "${source_dir}/llvm" -B "${build_dir}" "${options[@]}" "${compiler[@]}" \
+    -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+    -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+    -DLLVM_PARALLEL_LINK_JOBS="${link_jobs}" \
+    -DLLVM_TARGETS_TO_BUILD=X86 \
+    -DLLVM_ENABLE_PROJECTS="clang;lld" \
+    -DLLVM_BUILD_INSTRUMENTED=IR
+  cmake --build "${build_dir}" --parallel "${jobs}" --target clang lld
+}
+
+# Run the instrumented clang and lld on a training build, and merge their
+# profiles. The training build compiles and links a part of LLVM and Clang
+# with optimization, which exercises the parser, the C++ semantics, the
+# optimizer, the x86 code generator, and the linker.
+function train() {
+  local source_dir="${1}"
+  local instrumented_build="${2}"
+  local stage1_dir="${3}"
+  local profdata="${4}"
+  local jobs="${5}"
+  local training_build="${source_dir}/training"
+  rm -rf -- "${training_build}" "${instrumented_build}/profiles"
+  local options=()
+  mapfile -t options < <(common_cmake_options)
+  cmake -S "${source_dir}/llvm" -B "${training_build}" "${options[@]}" \
+    -DCMAKE_C_COMPILER="${instrumented_build}/bin/clang" \
+    -DCMAKE_CXX_COMPILER="${instrumented_build}/bin/clang++" \
+    -DLLVM_ENABLE_LLD=ON \
+    -DLLVM_TARGETS_TO_BUILD=X86 \
+    -DLLVM_ENABLE_PROJECTS=clang
+  cmake --build "${training_build}" --parallel "${jobs}" --target opt clangSema clangCodeGen
+  local profiles=()
+  mapfile -t profiles < <(find "${instrumented_build}/profiles" -name '*.profraw')
+  if ((${#profiles[@]} == 0)); then
+    printf 'The training build wrote no profiles into %s\n' "${instrumented_build}/profiles" >&2
+    return 1
+  fi
+  "${stage1_dir}/bin/llvm-profdata" merge --output="${profdata}" "${profiles[@]}"
+  rm -rf -- "${training_build}"
+}
+
+# Stage 3: the clang of stage 1 builds the installation with the profile and
+# ThinLTO. The runtimes of the installation are compiled by the clang of this
+# build for glibc 2.17.
+function build_final() {
+  local source_dir="${1}"
+  local build_dir="${2}"
+  local stage1_dir="${3}"
+  local profdata="${4}"
+  local install_dir="${5}"
+  local version="${6}"
+  local jobs="${7}"
+  local link_jobs="${8}"
+  local tools projects runtimes targets
+  tools="$(toolchain_tools)"
+  projects="$(cmake_list "${PROJECTS[@]}")"
+  runtimes="$(cmake_list "${RUNTIMES[@]}")"
+  targets="$(cmake_list "${TARGETS[@]}")"
+  write_target_config "${build_dir}/bin"
+  local options=() compiler=()
+  mapfile -t options < <(common_cmake_options)
+  mapfile -t compiler < <(stage1_compiler_options "${stage1_dir}")
+  cmake -S "${source_dir}/llvm" -B "${build_dir}" "${options[@]}" "${compiler[@]}" \
+    -DCMAKE_INSTALL_PREFIX="${install_dir}" \
+    -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+    -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+    -DCMAKE_C_FLAGS="-g0" \
+    -DCMAKE_CXX_FLAGS="-g0" \
+    -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
+    -DCMAKE_PREFIX_PATH="${HOST_LIBS_DIR}" \
+    -DLLVM_PARALLEL_LINK_JOBS="${link_jobs}" \
+    -DLLVM_ENABLE_LTO=Thin \
+    -DLLVM_PROFDATA_FILE="${profdata}" \
+    -DLLVM_ENABLE_PROJECTS="${projects}" \
+    -DLLVM_ENABLE_RUNTIMES="${runtimes}" \
+    -DLLVM_TARGETS_TO_BUILD="${targets}" \
+    -DLLVM_FORCE_VC_REPOSITORY=https://github.com/llvm/llvm-project \
+    -DLLVM_FORCE_VC_REVISION="llvmorg-${version}" \
+    -DLLVM_INSTALL_TOOLCHAIN_ONLY=ON \
+    -DLLVM_TOOLCHAIN_TOOLS="${tools}" \
+    -DLLVM_BUILD_TOOLS=ON \
+    -DLLVM_INCLUDE_TOOLS=ON \
+    -DLLVM_INSTALL_TOOLS=ON \
+    -DLLVM_TOOLS_INSTALL_DIR=bin \
+    -DCLANG_BUILD_TOOLS=ON \
+    -DCLANG_INCLUDE_TOOLS=ON \
+    -DCLANG_INSTALL_TOOLS=ON \
+    -DCLANG_OPENMP_RUNTIME=libomp \
+    -DCLANG_PLUGIN_SUPPORT=ON \
+    -DLLVM_ENABLE_FFI=ON \
+    -DFFI_INCLUDE_DIR="${HOST_LIBS_DIR}/include" \
+    -DFFI_LIBRARY_DIR="${HOST_LIBS_DIR}/lib" \
+    -DLLVM_ENABLE_RTTI=ON \
+    -DLLVM_ENABLE_THREADS=ON \
+    -DLLVM_ENABLE_LIBXML2=FORCE_ON \
+    -DLLVM_ENABLE_ZLIB=FORCE_ON \
+    -DZLIB_LIBRARY_RELEASE="${HOST_LIBS_DIR}/lib/libz.a" \
+    -DZLIB_USE_STATIC_LIBS=ON \
+    -DLLVM_ENABLE_ZSTD=FORCE_ON \
+    -DLLVM_USE_STATIC_ZSTD=ON \
+    -DLIBCXX_STATICALLY_LINK_ABI_IN_STATIC_LIBRARY=ON \
+    -DLIBCXX_STATICALLY_LINK_ABI_IN_SHARED_LIBRARY=ON \
+    -DLIBCXX_ENABLE_ABI_LINKER_SCRIPT=OFF \
+    -DLIBCXXABI_STATICALLY_LINK_UNWINDER_IN_STATIC_LIBRARY=ON \
+    -DLIBCXXABI_STATICALLY_LINK_UNWINDER_IN_SHARED_LIBRARY=ON \
+    -DLIBOMP_ENABLE_SHARED=OFF \
+    -DLLVM_USE_PERF=ON \
+    -DLLDB_ENABLE_PYTHON=OFF \
+    -DLLDB_ENABLE_CURSES=OFF \
+    -DLLDB_ENABLE_LIBEDIT=OFF \
+    -DLLVM_INCLUDE_UTILS=OFF
+  cmake --build "${build_dir}" --parallel "${jobs}"
+  rm -rf -- "${install_dir}"
+  mkdir -p "${install_dir}"
+  cmake --install "${build_dir}"
+}
+
 main() {
   local var
-  for var in SOURCE_DATE_EPOCH DOCKER_BASE_IMAGE BUILD_COMMIT BUILD_DIRTY; do
+  for var in SOURCE_DATE_EPOCH DOCKER_BASE_IMAGE BUILD_COMMIT BUILD_DIRTY HOST_TUPLE HOST_GCC_DIR HOST_GCC_RECORD HOST_LIBS_DIR; do
     if [[ -z "${!var:-}" ]]; then
       printf '%s is not set; run scripts/main through ./build\n' "${var}" >&2
       return 1
     fi
   done
-  local version="${1:-${LLVM_VERSION:-22.1.8}}"
+  local version="${1:-${LLVM_VERSION:-23.1.4}}"
   local jobs="${JOBS:-6}"
   local link_jobs="${LINK_JOBS:-1}"
   local source_name="llvm-project-${version}.src.tar.xz"
@@ -223,73 +453,23 @@ main() {
     fi
   done
 
-  local tools
-  tools="$(toolchain_tools)"
-  local projects runtimes targets
-  projects="$(cmake_list "${PROJECTS[@]}")"
-  runtimes="$(cmake_list "${RUNTIMES[@]}")"
-  targets="$(cmake_list "${TARGETS[@]}")"
-
-  export CFLAGS="-fPIC -g0 -Os ${CFLAGS:-}"
-  export CXXFLAGS="-fPIC -g0 -Os ${CXXFLAGS:-}"
-  export LDFLAGS="-static-libgcc -static-libstdc++ -s ${LDFLAGS:-}"
+  local stage1_build="${source_dir}/stage1"
+  local stage1_dir="${source_dir}/stage1-install"
+  local instrumented_build="${source_dir}/stage2-instrumented"
+  local profdata="${source_dir}/clang.profdata"
   export CCACHE_DIR="/cache/ccache"
   export CCACHE_NOCOMPRESS="1"
   export CCACHE_MAXSIZE="50G"
+  unset CFLAGS CXXFLAGS LDFLAGS
 
-  cmake -G Ninja -S "${source_dir}/llvm" -B "${source_dir}/build" \
-    -DCMAKE_INSTALL_PREFIX="${install_dir}" \
-    -DCMAKE_BUILD_TYPE=MinSizeRel \
-    -DCMAKE_C_COMPILER_LAUNCHER=ccache \
-    -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
-    -DLLVM_PARALLEL_LINK_JOBS="${link_jobs}" \
-    -DLLVM_ENABLE_PROJECTS="${projects}" \
-    -DLLVM_ENABLE_RUNTIMES="${runtimes}" \
-    -DLLVM_TARGETS_TO_BUILD="${targets}" \
-    -DLLVM_STATIC_LINK_CXX_STDLIB=ON \
-    -DLLVM_FORCE_VC_REPOSITORY=https://github.com/llvm/llvm-project \
-    -DLLVM_FORCE_VC_REVISION="llvmorg-${version}" \
-    -DLLVM_INSTALL_TOOLCHAIN_ONLY=ON \
-    -DLLVM_TOOLCHAIN_TOOLS="${tools}" \
-    -DLLVM_BUILD_TOOLS=ON \
-    -DLLVM_INCLUDE_TOOLS=ON \
-    -DLLVM_INSTALL_TOOLS=ON \
-    -DLLVM_TOOLS_INSTALL_DIR=bin \
-    -DCLANG_BUILD_TOOLS=ON \
-    -DCLANG_INCLUDE_TOOLS=ON \
-    -DCLANG_INSTALL_TOOLS=ON \
-    -DCLANG_OPENMP_RUNTIME=libomp \
-    -DCLANG_PLUGIN_SUPPORT=ON \
-    -DLLVM_ENABLE_FFI=ON \
-    -DLLVM_ENABLE_RTTI=ON \
-    -DLLVM_ENABLE_THREADS=ON \
-    -DLLVM_ENABLE_LIBXML2=FORCE_ON \
-    -DLLVM_ENABLE_ZLIB=FORCE_ON \
-    -DZLIB_LIBRARY_RELEASE=/usr/lib/libz.a \
-    -DZLIB_USE_STATIC_LIBS=ON \
-    -DLLVM_ENABLE_ZSTD=FORCE_ON \
-    -DLLVM_USE_STATIC_ZSTD=ON \
-    -DLIBCXX_STATICALLY_LINK_ABI_IN_STATIC_LIBRARY=ON \
-    -DLIBCXX_STATICALLY_LINK_ABI_IN_SHARED_LIBRARY=ON \
-    -DLIBCXX_ENABLE_ABI_LINKER_SCRIPT=OFF \
-    -DLIBCXXABI_STATICALLY_LINK_UNWINDER_IN_STATIC_LIBRARY=ON \
-    -DLIBCXXABI_STATICALLY_LINK_UNWINDER_IN_SHARED_LIBRARY=ON \
-    -DLIBOMP_ENABLE_SHARED=OFF \
-    -DLLVM_USE_PERF=ON \
-    -DLLDB_ENABLE_PYTHON=OFF \
-    -DLLDB_ENABLE_CURSES=OFF \
-    -DLLDB_ENABLE_LIBEDIT=OFF \
-    -DLLVM_ENABLE_BINDINGS=OFF \
-    -DLLVM_INCLUDE_BENCHMARKS=OFF \
-    -DLLVM_INCLUDE_DOCS=OFF \
-    -DLLVM_INCLUDE_EXAMPLES=OFF \
-    -DLLVM_INCLUDE_TESTS=OFF \
-    -DLLVM_INCLUDE_UTILS=OFF \
-    2>&1 | tee "${source_dir}/configure.log"
-  cmake --build "${source_dir}/build" --parallel "${jobs}" 2>&1 | tee "${source_dir}/build.log"
-  rm -rf -- "${install_dir}"
-  mkdir -p "${install_dir}"
-  cmake --install "${source_dir}/build" 2>&1 | tee "${source_dir}/install.log"
+  build_stage1 "${source_dir}" "${stage1_build}" "${stage1_dir}" "${jobs}" "${link_jobs}" 2>&1 |
+    tee "${source_dir}/stage1.log"
+  build_instrumented "${source_dir}" "${instrumented_build}" "${stage1_dir}" "${jobs}" "${link_jobs}" 2>&1 |
+    tee "${source_dir}/stage2-instrumented.log"
+  train "${source_dir}" "${instrumented_build}" "${stage1_dir}" "${profdata}" "${jobs}" 2>&1 |
+    tee "${source_dir}/training.log"
+  build_final "${source_dir}" "${source_dir}/build" "${stage1_dir}" "${profdata}" "${install_dir}" "${version}" \
+    "${jobs}" "${link_jobs}" 2>&1 | tee "${source_dir}/build.log"
 
   # The MinGW stage may add files to the installation, but must not change any
   # file of LLVM, so that the LLVM archives hold the same files as without it.

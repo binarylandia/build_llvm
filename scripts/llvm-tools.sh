@@ -9,7 +9,7 @@
 # A tool that LLVM creates as a symlink, such as llvm-readelf to llvm-readobj,
 # is installed only when both the link name and its target are in the list.
 
-# The default LLVM_TOOLCHAIN_TOOLS of LLVM 22.1.8 and 23.1.1. The build forces
+# The default LLVM_TOOLCHAIN_TOOLS of LLVM 23.1.4. The build forces
 # libxml2 on, so llvm-mt is always built. The unprefixed names are binutils
 # symlinks, which LLVM creates only with LLVM_INSTALL_BINUTILS_SYMLINKS.
 # shellcheck disable=SC2034 # used by the scripts that source this file

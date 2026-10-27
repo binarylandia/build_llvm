@@ -26,10 +26,10 @@ MINGW_CRT="ucrt"
 # Windows 7, the default of mingw-w64 and llvm-mingw.
 MINGW_WIN32_WINNT="0x601"
 
-# llvm-mingw release 20260616, the last release built with LLVM 22 (22.1.8).
+# llvm-mingw release 20261006, built with LLVM 23.1.3.
 # shellcheck disable=SC2034 # used by the scripts that source this file
-LLVM_MINGW_TAG="20260616"
-LLVM_MINGW_COMMIT="170b7e1ec4ad1d9264e6ba320cd4d02f96299c60"
+LLVM_MINGW_TAG="20261006"
+LLVM_MINGW_COMMIT="e1878a59f8bf3e1a73afe28f1b83168b1d029ed8"
 # shellcheck disable=SC2034 # used by the scripts that source this file
 LLVM_MINGW_SOURCE="llvm-mingw-${LLVM_MINGW_COMMIT}.tar.gz"
 # shellcheck disable=SC2034 # used by the scripts that source this file

@@ -98,9 +98,13 @@ main() {
   export CLEAN=1
 
   pushd "${scripts_dir}" >/dev/null
-  ./install-wrappers.sh "${install_dir}"
+  # The wrappers and the mingw-w64 tools (widl, gendef) run on the build
+  # machine, so the GCC of the host toolchain compiles them for glibc 2.17.
+  CC="${HOST_GCC_DIR}/bin/${HOST_TUPLE}-gcc" CXX="${HOST_GCC_DIR}/bin/${HOST_TUPLE}-g++" \
+    ./install-wrappers.sh "${install_dir}"
   set_sysroots "${install_dir}"
-  ./build-mingw-w64-tools.sh "${install_dir}"
+  CC="${HOST_GCC_DIR}/bin/${HOST_TUPLE}-gcc" CXX="${HOST_GCC_DIR}/bin/${HOST_TUPLE}-g++" \
+    ./build-mingw-w64-tools.sh "${install_dir}"
   ./build-mingw-w64.sh \
     --with-default-msvcrt="${MINGW_CRT}" \
     --with-default-win32-winnt="${MINGW_WIN32_WINNT}" \
