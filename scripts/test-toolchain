@@ -68,7 +68,7 @@ main() {
     [[ -f "${tool}" ]] || continue
     [[ "$(od -An -tx1 -N4 "${tool}")" == ' 7f 45 4c 46' ]] || continue
     readelf --dynamic "${tool}" >"${test_dir}/dynamic.txt"
-    if grep -E '\(NEEDED\).*\[(libz\.so|libzstd\.so|libquadmath\.so|libgcc_s\.so|libstdc\+\+\.so)' "${test_dir}/dynamic.txt"; then
+    if grep -E '\(NEEDED\).*\[(libz\.so|libzstd\.so|libxml2\.so|libffi\.so|libquadmath\.so|libgcc_s\.so|libstdc\+\+\.so|libc\+\+\.so|libc\+\+abi\.so|libunwind\.so)' "${test_dir}/dynamic.txt"; then
       printf 'Unexpected shared runtime dependency in %s\n' "${tool}" >&2
       return 1
     fi
