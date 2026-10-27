@@ -427,7 +427,7 @@ main() {
       return 1
     fi
   done
-  local version="${1:-${LLVM_VERSION:-23.1.4}}"
+  local version="${1:-${LLVM_VERSION:-23.1.1}}"
   local jobs="${JOBS:-6}"
   local link_jobs="${LINK_JOBS:-1}"
   local source_name="llvm-project-${version}.src.tar.xz"
