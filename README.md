@@ -18,7 +18,7 @@ LLVM builds in three stages, all on the glibc 2.17 sysroot of the `x86_64-unknow
 
 1. The GCC of that toolchain builds clang, lld, and the LLVM runtimes (static libc++, libc++abi, libunwind, compiler-rt)
 2. The clang of stage 1 builds a clang and an lld with IR instrumentation, which record a profile while they compile and link a part of LLVM and Clang
-3. The clang of stage 1 builds the installation with that profile and ThinLTO, and links the tools against the runtimes of stage 1
+3. The clang of stage 1 builds the installation with that profile and ThinLTO, and links the tools against the runtimes of stage 1. Flang compiles without the profile, which holds no flang samples and makes clang spend hours on some flang sources (`patches/002-flang-without-pgo-profile.patch`)
 
 The LLVM major and minor version follow the LLVM that the Rust release of the consumers bundles (`rustc -vV`), with the newest patch release of that series: Rust 1.99.1 bundles LLVM 23.1.1, and this build is LLVM 23.1.4. Consumers that mix Rust and C code, or use the LLVM tools on the profiles and object files of rustc, then work with one LLVM release series. Source checksums are pinned in `scripts/sources.sha256`. Each version has a separate build and installation directory. Builds run native C/C++, libc++, Fortran, and OpenMP checks, compile and link wasm32 and wasm64 modules, check the Darwin tools, and check the MinGW runtimes before packaging. Archives, `SHA256SUMS`, and one metadata file are written to `.out/llvm-<version>-<build time>/`.
 
