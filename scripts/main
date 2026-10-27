@@ -213,11 +213,19 @@ function write_target_config() {
     >"${bin_dir}/${HOST_TUPLE}.cfg"
 }
 
-# Print the CMake options that every stage shares.
+# Print the CMake options that every stage shares. Every lld links zlib and
+# zstd: the crt files of the glibc 2.17 sysroot have compressed debug sections.
 function common_cmake_options() {
   printf '%s\n' \
     -G Ninja \
     -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_PREFIX_PATH="${HOST_LIBS_DIR}" \
+    -DLLVM_ENABLE_ZLIB=FORCE_ON \
+    -DZLIB_INCLUDE_DIR="${HOST_LIBS_DIR}/include" \
+    -DZLIB_LIBRARY_RELEASE="${HOST_LIBS_DIR}/lib/libz.a" \
+    -DZLIB_USE_STATIC_LIBS=ON \
+    -DLLVM_ENABLE_ZSTD=FORCE_ON \
+    -DLLVM_USE_STATIC_ZSTD=ON \
     -DLLVM_DEFAULT_TARGET_TRIPLE="${HOST_TUPLE}" \
     -DLLVM_ENABLE_BINDINGS=OFF \
     -DLLVM_INCLUDE_BENCHMARKS=OFF \
@@ -368,7 +376,6 @@ function build_final() {
     -DCMAKE_C_FLAGS="-g0" \
     -DCMAKE_CXX_FLAGS="-g0" \
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
-    -DCMAKE_PREFIX_PATH="${HOST_LIBS_DIR}" \
     -DLLVM_PARALLEL_LINK_JOBS="${link_jobs}" \
     -DLLVM_ENABLE_LTO=Thin \
     -DLLVM_PROFDATA_FILE="${profdata}" \
@@ -394,11 +401,6 @@ function build_final() {
     -DLLVM_ENABLE_RTTI=ON \
     -DLLVM_ENABLE_THREADS=ON \
     -DLLVM_ENABLE_LIBXML2=FORCE_ON \
-    -DLLVM_ENABLE_ZLIB=FORCE_ON \
-    -DZLIB_LIBRARY_RELEASE="${HOST_LIBS_DIR}/lib/libz.a" \
-    -DZLIB_USE_STATIC_LIBS=ON \
-    -DLLVM_ENABLE_ZSTD=FORCE_ON \
-    -DLLVM_USE_STATIC_ZSTD=ON \
     -DLIBCXX_STATICALLY_LINK_ABI_IN_STATIC_LIBRARY=ON \
     -DLIBCXX_STATICALLY_LINK_ABI_IN_SHARED_LIBRARY=ON \
     -DLIBCXX_ENABLE_ABI_LINKER_SCRIPT=OFF \
