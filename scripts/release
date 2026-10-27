@@ -103,6 +103,7 @@ function write_notes() {
       def code: map("`" + . + "`") | join(", ");
       (.toolchains[] |
         "LLVM \(.llvm) for x86_64 Linux, built from `\(.source.name)` (sha256 `\(.source.sha256)`) at commit \(.build_commit[0:12]) of this repository, on `\(.base_image)`.\n",
+        "- Build: clang of the GCC 16 toolchain `\(.build.host_gcc.url | split("/") | last)`, then a profile from an instrumented clang and lld, then the installation with PGO and ThinLTO; the tools link libc++ statically and run on Linux with glibc \(.build.host_glibc) or later",
         "- Projects: \(.projects | code)",
         "- Runtimes: \(.runtimes | code)",
         "- Targets: \(.targets | code)",
